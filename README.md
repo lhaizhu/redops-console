@@ -1,118 +1,109 @@
-# RedOps Console — 域渗透编排控制台
+# RedOps Console
 
-本地 Web 控制台 + 编排引擎:把 **88 个工具 / 10 条攻击链**封装成新手也能走完的域渗透流水线。
-在 GOAD 实验室(Game of Active Directory)经两轮全链实战验证:从零信息到**全林制霸**(父域+子域金票、44 条凭据自动入账)。
+域渗透工具编排平台:本地 Web 控制台 + 执行引擎,将 88 个参数化工具与 10 条攻击链组织为可复现的操作流水线。
+面向授权渗透测试与 AD 实验环境(如 GOAD)。全部操作强制经过 scope 校验。
 
-> ⚠️ **仅用于授权环境**(实验室 / 已签授权的渗透测试)。内置 scope 硬护栏不是装饰品——先声明范围再开打。
+## 功能
 
----
+- **执行台**:工具参数化调用;危险操作需显式 confirm;sudo 密码经 stdin 传递,不进 argv 与进程列表
+- **攻击链**:多步编排,支持断点续跑(checkpoint)、条件步骤(when)、按行展开(for_each)、步骤间 cwd 产物交接
+- **scope 校验**:按项目声明 CIDR/IP/域名后缀;范围外目标拒绝执行;校验失败一律拒绝(fail-closed)
+- **凭据管理**:工具输出自动解析入台账(creds.csv,去重);模板支持 `{{cred:主体}}` 引用台账凭据;可爆哈希(TGS/ASREP/NetNTLMv2)自动入队,crack-sync 走 hashcat、失败回退 john,破解结果自动回灌台账
+- **结果分析**:26 类签名识别(Pwn3d/ADCS 模板/凭据收割等)生成 findings;错误输出匹配静态处置建议(fail_hints)
+- **远程执行原语**(bin/win-exec.py):任务计划触发 + SMB 文件回读,规避高延迟链路下 atexec 的任务删除竞态与 psexec 管道挂起;支持密码 / NT 哈希 / KRB5CCNAME 票据三种认证,SYSTEM 权限
+- **DCSync**:DRSUAPI 远程复制,支持哈希认证与 Enterprise Admins 跨域(父域凭据拉子域),不产生目标机落地文件
+- **报告**:bin/report.sh 聚合台账、findings、执行时间线输出交付文档
+- **注册表热加载**:tools.json / chains.json 修改后自动重载;解析失败保留旧表
+- **回归测试**:`python3 -m redops.tests.regress`,9 组用例,全程 /tmp 隔离
+- **AI 辅助(默认关闭)**:配置后支持下一步建议;兼容 OpenAI / Claude / 自定义网关;外发内容经哈希打码
 
-## 核心特性
-
-| 能力 | 说明 |
-|---|---|
-| **执行台** | 88 工具参数化执行,危险操作 confirm 闸门,sudo 密码走 stdin 不进进程列表 |
-| **攻击链** | 10 条链(onboard / kerb / rbcd / esc1 / shadow / esc8 / mssql-links / cross-domain / wg-reap …),支持断点续跑(checkpoint)、条件步(when)、逐行展开(for_each) |
-| **scope 硬护栏** | `projects/<名>/scope.txt` 声明 CIDR/IP/域后缀;超范围目标一律 403,fail-closed |
-| **凭据流水线** | 输出自动收割 → `creds.csv` 台账(去重) + `state.json`(值只存 sha256);模板 `{{cred:主体}}` 水合自动代填;可爆哈希自动入队 → crack-sync(hashcat→john 兜底)破解回灌 |
-| **findings 自动发现** | Pwn3d / ESC4 / 凭据收割等 26 类签名 → 攻击面看板(board)指路下一步 |
-| **fail_hints** | 26+ 错误签名静态对策(Kerberos 错误码 / atexec 竞态 / EA 跨域 …),新手照着走 |
-| **Windows agent 原语** | `bin/win-exec.py`:任务计划保活触发 + SMB 结果文件回读——根治高延迟链路 atexec Run/Delete 竞态与 psexec 管道挂起;SYSTEM 权限;密码/NT哈希/KRB5票三认证 |
-| **Defender 规避正解** | 不碰 LSASS:EA 跨域 DRSUAPI(dcsync-all)零落地拉全域哈希,杀软无感 |
-| **报告交付** | `bin/report.sh <项目>` 聚合台账/findings/时间线 → 交付报告 |
-| **注册表热加载** | tools.json/chains.json 按 mtime 自动重载,改坏保旧表 |
-| **回归包** | `python3 -m redops.tests.regress` 9 组用例(隔离 /tmp,不碰真实数据) |
-| **AI 兜底(默认关)** | 配置页开启后可问「下一步建议」;OpenAI/Claude/自定义网关三格式;外发前哈希打码 |
-
-## 架构
+## 组成
 
 ```
-浏览器 ──► redops.server(ThreadingHTTPServer, token 认证, 127.0.0.1)
-             ├─ redops.engine   工具/链执行 · scope 闸门 · 历史 · checkpoint
-             ├─ redops.harvest  输出收割 → 台账/哈希队列
-             ├─ redops.intel    fail_hints · board · findings
-             ├─ redops.state    状态机(tried/phase/cred/summary)
-             ├─ redops.project  多项目工作区(projects/<名>/{scope.txt,loot,notes.md})
-             └─ redops.web      tools.json(88 工具) · chains.json(10 链) · 文档站(build.py 生成)
-bin/*.sh|py   25 个编排脚本(autopwn / spray-safe / win-exec / report …)
-docs/         33 篇中文知识库(域渗透一条龙 / ADCS / 跨林 / 凭据收割 …)
+redops/            引擎(Python 标准库 + impacket)
+  engine.py        工具/链执行、scope 校验、历史、checkpoint
+  server.py        HTTP API,token 认证,监听 127.0.0.1
+  harvest.py       输出解析、台账写入、哈希入队
+  intel.py         fail_hints、findings、攻击面看板数据
+  state.py         状态机(已试标记/阶段/凭据/摘要)
+  scope.py         范围校验(CIDR/IP/域名后缀/排除规则)
+  web/tools.json   工具注册表(88)
+  web/chains.json  攻击链(10)
+  web/build.py     docs/*.md → 单文件文档站
+  tests/regress.py 回归用例
+bin/               编排脚本 25 个(autopwn、spray-safe、win-exec、report 等)及公共库
+docs/              中文参考文档 33 篇
+install.sh         安装脚本
 ```
 
-## 快速开始(一键)
+## 安装
 
-**环境**:Kali Linux(或 Debian 系),Python ≥ 3.11,仅标准库 + impacket。
+要求:Kali Linux 或 Debian 系,Python ≥ 3.11。
 
 ```bash
 git clone <repo> ~/tools && cd ~/tools
-bash install.sh                    # 依赖+配置+自检一条龙;加 --with-binaries 连大二进制一起装
-python3 -m redops 18911            # 启动;打印 Token
-# 浏览器打开 http://127.0.0.1:18911,填入 Token
+bash install.sh
 ```
 
-`install.sh` 幂等可重复跑:`--skip-deps` 只配置+自检;`--with-binaries` 从 GitHub 官方 release 拉
-fscan / ligolo-proxy / ligolo-agent / rclone / easytier(单一下载失败不致命,只影响对应功能)。
+install.sh 完成:apt 依赖(impacket-scripts、netexec、certipy-ad、hashcat、john、bloodhound-ce-python 等)、
+pip 兜底、bh.json 初始化、回归自检。参数:
 
-**可选服务**:BloodHound CE——install 已生成 `redops/bh.json`(默认 admin/admin),改成你的实例凭据即可。
+- `--with-binaries`:附加下载 fscan / ligolo / rclone / easytier(GitHub 官方 release,单项失败不影响其余)
+- `--skip-deps`:跳过依赖安装,仅配置与自检
 
-## 新手剧本(GOAD 实战验证路径)
+脚本幂等,可重复执行;已有配置不覆盖。
+
+## 使用
 
 ```bash
-# 0. 建项目+声明范围(硬护栏,先做!)
-python3 -m redops.project 新建 GOAD && echo '192.168.56.0/24' > projects/GOAD/scope.txt
-
-# 1. 从零打点:    bin/autopwn.sh <域控IP>
-# 2. 有凭据后:    bin/autopwn-continue.sh <域控IP>   # 权限验证/SAM/LSA/MSSQL
-# 3. 配环境:      控制台跑 onboard 链(/etc/hosts+krb5.conf+对时)
-# 4. 读路径:      bh-collect → bh-path(攻击路径解读)
-# 5. 烤制破解:    kerb 链 → hashcat-queue → crack-sync 自动回灌台账
-# 6. 制霸:        dcsync-all(EA 可跨域)→ golden 金票
-# 7. 交付:        bin/report.sh GOAD
+python3 -m redops 18911        # 启动,输出访问 token
+# 浏览器访问 http://127.0.0.1:18911
 ```
 
-详细手册:`docs/10-域渗透一条龙.md` 开头「🚀 新手剧本」、`docs/29-AI操作手册.md`。
+典型流程:
 
-## 项目结构
+```bash
+# 建立项目并声明范围(必选,未声明范围仅允许只读工具)
+echo '10.10.10.0/24' > projects/<项目名>/scope.txt
 
-```
-redops/            # 引擎包(~4k 行,stdlib+impacket)
-  engine.py        #   执行/链/scope 闸门/历史/checkpoint
-  server.py        #   HTTP API(20 端点,token 常量时间比较)
-  harvest.py       #   凭据收割/哈希入队
-  intel.py         #   fail_hints/board/findings
-  state.py scope.py project.py config.py ai.py paths.py
-  web/tools.json   #   88 工具注册表(参数化模板)
-  web/chains.json  #   10 攻击链
-  web/build.py     #   docs/*.md → 单文件文档站 index.html
-  tests/regress.py #   永久回归包(9 组用例)
-bin/               # 25 编排脚本 + lib 公共库
-docs/              # 33 篇中文知识库
-install.sh         # 一键安装(依赖/二进制/配置/自检)
-bin/check-refs.py  # 文档↔工具↔链引用一致性审计(全绿为准)
+# 信息收集与打点
+bin/autopwn.sh <域控IP>
+bin/autopwn-continue.sh <域控IP>
+
+# 控制台执行:onboard 链(名称解析/krb5/对时)→ bh-collect → bh-path
+# 凭据攻击:kerb 链 → crack-sync 自动破解回灌
+# 域控复制:dcsync-all(支持 EA 跨域)→ golden 票据
+
+# 输出报告
+bin/report.sh <项目名>
 ```
 
-## 安全设计要点
+详见 docs/10-域渗透一条龙.md、docs/29-AI操作手册.md。
 
-- **scope 硬护栏**:每个目标参数过 scope.py,超范围 403;校验器崩溃/超时一律拒绝(fail-closed)
-- **危险闸门**:`danger:true` 工具必须 `confirm:true` 才执行(喷洒/金票/DCSync/远程执行)
-- **喷洒保护**:spray-safe 强制锁定阈值解析+限速,唯一喷洒入口
-- **token 认证**:`X-RedOps-Token` 常量时间比较;仅监听 127.0.0.1
-- **sudo 密码**:stdin 管道传递,不出现在 argv/进程列表/历史
-- **对外脱敏**:配置端点(BH/api_key)与 AI brief 外发一律打码(执行历史按用户选择原文存储)
-- **状态值最小化**:state.json 只存凭据 sha256 指纹,明文落 creds.csv(本地文件,别提交)
+## 安全模型
 
-## 不入库的东西(本仓库已排除)
+- 所有目标参数经 scope 校验,范围外拒绝;校验器异常按拒绝处理
+- danger 标记的工具/链要求 confirm 显式确认
+- 密码喷洒统一走 spray-safe,强制解析目标锁定策略并限速
+- API 使用 X-RedOps-Token 常量时间比较,仅监听 127.0.0.1
+- 配置接口(BloodHound 凭据、AI api_key)不回显明文
+- state.json 仅保存凭据的 sha256 指纹;明文仅存在于本地 creds.csv
 
-- `projects/ loot/ runs/`——交战数据(凭据台账、票据 ccache、输出日志)
-- 大型第三方二进制(fscan/rclone/ligolo 等,上文有清单)
-- `redops/bh.json`(BloodHound 实例凭据,用 bh.json.example)
+## 仓库不含以下内容
 
-## 实战验证记录(GOAD,2026-09)
+- projects/、loot/、runs/:运行期数据(台账、票据、日志)
+- bin/ 下第三方二进制(fscan、rclone、ligolo 等,install.sh --with-binaries 获取)
+- redops/bh.json(由 bh.json.example 生成)
 
-两轮全链实测:侦察→凭据→BH 路径→9 链→爆破回灌→父域金票→**EA 跨域 DRSUAPI 北域全域**→北域金票验证。
-期间修复 18+ 个实战暴露的摩擦点并全部固化进回归包。受限项(环境性,非工具):essos 跨林缺凭据、
-GOAD Defender 拦 mimikatz/comsvcs(正解=换 DRSUAPI 协议,已内置 dcsync-all)。
+## 测试记录
 
-## 免责声明
+在 GOAD v3 实验林完成两轮全流程验证:信息收集 → 凭据获取 → BloodHound 路径分析 →
+委派/ADCS/票据链 → 父域 DCSync → Enterprise Admins 跨域复制子域全域 → 子域金票验证。
+过程中发现并修复的问题已固化进回归用例。
 
-本项目仅面向**授权**安全测试与学习(如 GOAD/HTB/自建实验林)。使用者须确保对目标拥有书面授权;
-作者不对任何未授权使用负责。内置 scope 护栏是辅助手段,不构成授权证明。
+已知环境限制:跨林(essos)需目标林凭据;目标机启用 Defender 时 mimikatz/comsvcs 类
+内存读取会被拦截,应改用 DRSUAPI 复制(已内置)。
+
+## License
+
+MIT。仅限授权环境使用,使用者须确保对目标持有书面授权。
