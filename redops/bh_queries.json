@@ -1,0 +1,24 @@
+{
+  "_meta": "BH CE 固化查询集(导入后界面 Analysis→Saved Queries 常驻)。来源:12 号附录已验证 + Exchange/ADFS 猎杀新增。",
+  "queries": [
+    {"name":"🔴 可烤的非高权用户(Kerberoast)","query":"MATCH (u:User {hasspn:true}) WHERE NOT (u)-[:MemberOf*1..]->(g:Group {highvalue:true}) RETURN u.name, u.description","description":"SPN 账户且不在高权组 — Kerberoast 首选目标"},
+    {"name":"🔴 AS-REP 可烤账户","query":"MATCH (u:User {dontreqpreauth:true}) RETURN u.name, u.description","description":"无预认证 — GetNPUsers 直接抓哈希"},
+    {"name":"🟠 无约束委托机器","query":"MATCH (c:Computer {unconstraineddelegation:true}) RETURN c.name, c.operatingsystem","description":"抓 DC 票即通吃;排除 DC 后全是目标"},
+    {"name":"🟠 约束委托边","query":"MATCH p=(n)-[:AllowedToDelegate]->(c:Computer) RETURN p","description":"S4U2self/proxy 链候选"},
+    {"name":"🟠 RBCD 现状(谁控制谁)","query":"MATCH p=(n)-[:AllowedToAct]->(c:Computer) RETURN p","description":"已配置 RESOURCE-BASED 委托"},
+    {"name":"🟠 RBCD 候选(可控写边→机器)","query":"MATCH p=(n)-[:WriteAccountRestrictions|GenericAll|GenericWrite|WriteDacl|WriteOwner|Owns]->(c:Computer) RETURN p","description":"有写边即可打 RBCD 三步链"},
+    {"name":"🟠 DACL 滥用边总览","query":"MATCH p=(u:User)-[:GenericAll|GenericWrite|WriteDacl|WriteOwner|Owns|ForceChangePassword|AllExtendedRights|WriteGMSAPassword|AddMember|AddSelf]->(t) RETURN p LIMIT 100","description":"全图高价值 ACL 边"},
+    {"name":"🔴 DCSync 路径","query":"MATCH p=(n)-[:DCSync]->(d:Domain) RETURN p","description":"已有复制权 — 直接 secretsdump -just-dc"},
+    {"name":"🔴 DCSync 候选(双 GetChanges)","query":"MATCH (n)-[:GetChanges]->(d:Domain) WHERE (n)-[:GetChangesAll]->(d) RETURN n.name, d.name","description":"同时有 GetChanges+All = 可 DCSync"},
+    {"name":"🟠 GPO 控制边","query":"MATCH p=(n)-[:GenericAll|GenericWrite|WriteDacl|WriteOwner|Owns]->(g:GPO) RETURN p","description":"可改 GPO = SharpGPOAbuse 定向下发"},
+    {"name":"🟠 GPO→OU 影响面","query":"MATCH p=(n)-[:GenericAll|GenericWrite|WriteDacl|WriteOwner|Owns]->(g:GPO)<-[:GPLink]-(ou:OU) RETURN p","description":"控制 GPO 且看它挂到哪个 OU"},
+    {"name":"🟠 LAPS 可读","query":"MATCH p=(n)-[:ReadLAPSPassword|SyncLAPSPassword]->(c:Computer) RETURN p","description":"直接吐本地管管密码"},
+    {"name":"🔴 最短路径到 DA(干净边集)","query":"MATCH p=shortestPath((u:User)-[:MemberOf|AdminTo|GenericAll|GenericWrite|WriteDacl|WriteOwner|Owns|HasSession|AllExtendedRights|CanRDP|ExecuteDCOM|ForceChangePassword|AllowedToDelegate|AllowedToAct|DCSync|GetChanges|GetChangesAll|ReadGMSAPassword|WriteGMSAPassword|AddMember|AddSelf*1..]->(g:Group {name:$DA})) RETURN p","description":"参数 $DA 填 'DOMAIN ADMINS@X.LOCAL' — 攻击路径主查询"},
+    {"name":"🟡 孤立 adminCount=1","query":"MATCH (u:User {admincount:true}) WHERE NOT (u)-[:MemberOf*1..]->(g:Group {highvalue:true}) RETURN u.name","description":"曾是管理员的高权残留账户"},
+    {"name":"🟣 Exchange 服务器(攻击面入口)","query":"MATCH (c:Computer) WHERE c.name CONTAINS 'EXCH' OR c.name CONTAINS 'MAIL' OR ANY(r IN [(c)-[:MemberOf]->(g) | g.name] WHERE r CONTAINS 'EXCHANGE') RETURN c.name, c.operatingsystem","description":"Exchange 服务器定位 — ProxyLogon/Shell 系列与规则攻击入口"},
+    {"name":"🟣 Exchange Trusted Subsystem 成员","query":"MATCH p=(n)-[:MemberOf*1..]->(g:Group) WHERE g.name CONTAINS 'EXCHANGE TRUSTED SUBSYSTEM' RETURN p","description":"该组成员 ≈ 域内通用管理权(可任意机器 psexec 类操作)"},
+    {"name":"🟣 Exchange Windows Permissions 成员","query":"MATCH p=(n)-[:MemberOf*1..]->(g:Group) WHERE g.name CONTAINS 'EXCHANGE WINDOWS PERMISSIONS' RETURN p","description":"该组对域对象有 WriteDacl — ACL 提权经典起点"},
+    {"name":"🟣 ADFS 服务器定位","query":"MATCH (c:Computer) WHERE c.name CONTAINS 'ADFS' OR c.name CONTAINS 'STS' RETURN c.name, c.operatingsystem","description":"ADFS 服务器 — DCSync svc 账户→ADFSDump→伪造令牌链入口"},
+    {"name":"🟣 ADFS 服务账户(gMSA/委托)","query":"MATCH (u:User) WHERE u.name CONTAINS 'ADFS' OR u.name CONTAINS 'SVC' AND (u:hasspn OR u:User {unconstraineddelegation:true}) RETURN u.name, u.hasspn, u.dontreqpreauth","description":"ADFS/GMSA 服务账户 — token signing 证书持有者"}
+  ]
+}

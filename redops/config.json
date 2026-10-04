@@ -1,0 +1,5 @@
+{
+  "ai_enabled": false,
+  "proxy": "",
+  "wordlist": "/usr/share/wordlists/rockyou.txt"
+}

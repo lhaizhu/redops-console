@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+
+# 交战数据(绝不上传)
+projects/
+loot/
+runs/
+creds*.csv
+*.ccache
+*.kirbi
+
+# 实例配置(用 *.example 复制)
+redops/bh.json
+
+# 第三方大二进制(自行下载放 bin/)
+bin/fscan
+bin/rclone
+bin/ligolo_*
+bin/easytier-*
+bin/ruler
+bin/suo5-*
+bin/Yakit.AppImage
+
+# 杂项
+.state.lock
+nohup.out
+dist/

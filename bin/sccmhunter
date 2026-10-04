@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# sccmhunter — SCCM/MECM 攻击套件 wrapper(v2.0.0,源码 ~/tools/src/sccmhunter)
+# 用法: sccmhunter <子命令> [参数]   如: sccmhunter find -u user -p pass -d domain -dc-ip 10.0.0.1
+set -euo pipefail
+cd ~/tools/src/sccmhunter
+exec python3 sccmhunter.py "$@"
